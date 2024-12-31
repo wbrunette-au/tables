@@ -274,14 +274,14 @@ jobs:
           description: Get artifacts from the 'Services' repository
           circleci-token: $API_TOKEN
           repo-name: 'services'
-          branch-name: $CIRCLE_BRANCH
+          branch-name: 'upgrade-jdk11' # replace with $CIRCLE_BRANCH env var eventually
           circleci-user: 'odk-x'
 
       - get-artifacts:
           description: Get artifacts from the 'Survey' repository
           circleci-token: $API_TOKEN
           repo-name: 'survey'
-          branch-name: $CIRCLE_BRANCH
+          branch-name: 'upgrade-jdk11' # replace with $CIRCLE_BRANCH env var eventually
           circleci-user: 'odk-x' # The CircleCI username should be changed here if need be. Keeping it as a static "odk-x" for now.
 
       - android/create-avd:
