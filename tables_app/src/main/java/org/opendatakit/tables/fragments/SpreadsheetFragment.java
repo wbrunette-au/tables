@@ -28,7 +28,6 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.consts.RequestCodeConsts;
 import org.opendatakit.data.JoinColumn;
 import org.opendatakit.data.utilities.ColumnUtil;
@@ -280,7 +279,7 @@ public class SpreadsheetFragment extends AbsTableDisplayFragment
         s.append(", ");
       }
       first = false;
-      String value = cell.row.getDataByKey(groupByColumn);
+      String value = cell.row.getStringValueByKey(groupByColumn);
       if (value == null) {
         s.append(groupByColumn).append(" IS NULL");
       } else {
@@ -603,7 +602,7 @@ public class SpreadsheetFragment extends AbsTableDisplayFragment
     }
 
     String access = spreadsheetTable.getRowAtIndex(cellInfo.rowId)
-        .getDataByKey(DataTableColumns.EFFECTIVE_ACCESS);
+        .getStringValueByKey(DataTableColumns.EFFECTIVE_ACCESS);
     if (access == null)
       access = "";
 
@@ -743,7 +742,7 @@ public class SpreadsheetFragment extends AbsTableDisplayFragment
     SpreadsheetCell cell = spreadsheetTable.getSpreadsheetCell(getProps().lastDataCellMenued);
     AlertDialog confirmDeleteAlert;
     // Prompt an alert box
-    final String rowId = cell.row.getDataByKey(DataTableColumns.ID);
+    final String rowId = cell.row.getStringValueByKey(DataTableColumns.ID);
     AlertDialog.Builder alert = new AlertDialog.Builder(getActivity());
     alert.setTitle(getString(R.string.confirm_delete_row))
         .setMessage(getString(R.string.are_you_sure_delete_row, rowId));

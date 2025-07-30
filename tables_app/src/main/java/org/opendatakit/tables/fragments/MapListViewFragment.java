@@ -20,7 +20,6 @@ import android.os.Bundle;
 import android.util.Log;
 import org.opendatakit.activities.IOdkDataActivity;
 import org.opendatakit.logging.WebLogger;
-import org.opendatakit.tables.R;
 import org.opendatakit.tables.views.webkits.OdkTablesWebView;
 
 /**
@@ -42,8 +41,10 @@ public class MapListViewFragment extends ListViewFragment implements IMapListVie
   private static final String INTENT_KEY_SELECTED_INDEX = "keySelectedIndex";
   /**
    * The index of an item that has been selected by the user.
+   * We must default to invalid index because the initial load of the list view may take place before onCreate is called
+   * I have no idea why
    */
-  protected int mSelectedItemIndex;
+  protected int mSelectedItemIndex = INVALID_INDEX;
 
   @Override
   public void onCreate(Bundle savedInstanceState) {
@@ -84,15 +85,29 @@ public class MapListViewFragment extends ListViewFragment implements IMapListVie
     if (getView() == null)
       return; // Can't do anything
 
-    OdkTablesWebView currentView = (OdkTablesWebView) getView().findViewById(R.id.webkit);
+    OdkTablesWebView currentView = getWebKit();
     // reload the page.
+    // the webkit doesn't like to reload, convince it
+    currentView.setForceLoadDuringReload();
     currentView.reloadPage();
   }
 
   @Override
   public void onResume() {
     super.onResume();
-    WebLogger.getLogger(getAppName()).d(TAG, "[onResume]");
+    OdkTablesWebView view = getWebKit();
+    if ( view != null ) {
+      view.onResume();
+    }
+  }
+
+  @Override
+  public void onPause() {
+    super.onPause();
+    OdkTablesWebView view = getWebKit();
+    if ( view != null ) {
+      view.onPause();
+    }
   }
 
   /**

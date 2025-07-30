@@ -19,11 +19,19 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.support.v4.content.ContextCompat;
+import androidx.core.content.ContextCompat;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.ViewGroup;
-import android.widget.*;
+import android.widget.ArrayAdapter;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.Spinner;
+import android.widget.TextView;
+import android.widget.Toast;
+
 import org.opendatakit.consts.IntentConsts;
 import org.opendatakit.data.utilities.TableUtil;
 import org.opendatakit.database.service.DbHandle;
@@ -86,7 +94,7 @@ public class ExportCSVActivity extends AbsBaseActivity {
   public void onCreate(Bundle savedInstanceState) {
     // We have to set the fragment manager here because if we don't, then the ImportTask will try
     // to display an alert dialog by grabbing the fragment manager
-    ImportExportDialogFragment.fragman = getFragmentManager();
+    ImportExportDialogFragment.fragman = getSupportFragmentManager();
     super.onCreate(savedInstanceState);
     appName = getIntent().getStringExtra(IntentConsts.INTENT_KEY_APP_NAME);
     if (appName == null) {
@@ -153,6 +161,14 @@ public class ExportCSVActivity extends AbsBaseActivity {
    * Attempts to export a table.
    */
   private void exportSubmission() {
+    if (tableSpin.getSelectedItemPosition() == Spinner.INVALID_POSITION) {
+      Toast
+          .makeText(this, R.string.export_no_table, Toast.LENGTH_LONG)
+          .show();
+
+      return;
+    }
+
     String tableId = tableIds[tableSpin.getSelectedItemPosition()];
     ImportExportDialogFragment
         .newInstance(ImportExportDialogFragment.EXPORT_IN_PROGRESS_DIALOG, this);
@@ -170,6 +186,7 @@ public class ExportCSVActivity extends AbsBaseActivity {
    */
   @Override
   protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+    super.onActivityResult(requestCode, resultCode, data);
     if (resultCode == RESULT_CANCELED) {
       return;
     }

@@ -14,6 +14,9 @@
 
 package org.opendatakit.tables.application;
 
+import android.content.Context;
+
+import com.google.firebase.analytics.FirebaseAnalytics;
 import org.opendatakit.application.CommonApplication;
 import org.opendatakit.tables.R;
 
@@ -29,7 +32,10 @@ public class Tables extends CommonApplication {
    */
   @SuppressWarnings("unused")
   private static final String TAG = Tables.class.getSimpleName();
+
   private static WeakReference<Tables> ref = null;
+
+  private FirebaseAnalytics analytics;
 
   public static Tables getInstance() {
     if (ref == null)
@@ -37,7 +43,7 @@ public class Tables extends CommonApplication {
       throw new IllegalStateException("not possible");
     return ref.get();
   }
-
+  
   @Override
   public int getApkDisplayNameResourceId() {
     return R.string.app_name;
@@ -53,11 +59,6 @@ public class Tables extends CommonApplication {
     return R.raw.systemzip;
   }
 
-  @Override
-  public int getWebKitResourceId() {
-    return -1; // R.id.webkit;
-  }
-
   public String getVersionedToolName() {
     String versionDetail = this.getVersionDetail();
     return getString(R.string.app_name) + versionDetail;
@@ -67,5 +68,8 @@ public class Tables extends CommonApplication {
   public void onCreate() {
     ref = new WeakReference<>(this);
     super.onCreate();
+
+    analytics = FirebaseAnalytics.getInstance(this);
+    analytics.logEvent(FirebaseAnalytics.Event.APP_OPEN, null);
   }
 }

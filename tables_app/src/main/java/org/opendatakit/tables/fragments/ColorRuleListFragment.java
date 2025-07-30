@@ -16,16 +16,21 @@
 package org.opendatakit.tables.fragments;
 
 import android.app.AlertDialog;
-import android.app.ListFragment;
+import androidx.fragment.app.ListFragment;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.os.Bundle;
-import android.view.*;
+import android.view.ContextMenu;
 import android.view.ContextMenu.ContextMenuInfo;
+import android.view.LayoutInflater;
+import android.view.Menu;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AdapterView.AdapterContextMenuInfo;
 import android.widget.ListView;
 import android.widget.Toast;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.data.ColorRule;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.utilities.ColorRuleUtil;

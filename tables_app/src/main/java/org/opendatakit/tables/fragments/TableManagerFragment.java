@@ -16,17 +16,21 @@
 package org.opendatakit.tables.fragments;
 
 import android.app.AlertDialog;
-import android.app.ListFragment;
+import androidx.fragment.app.ListFragment;
 import android.content.ComponentName;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.os.Bundle;
-import android.view.*;
+import android.view.ContextMenu;
+import android.view.LayoutInflater;
+import android.view.MenuInflater;
+import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.ListView;
 import android.widget.TextView;
 import android.widget.Toast;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.consts.IntentConsts;
 import org.opendatakit.consts.RequestCodeConsts;
@@ -40,6 +44,7 @@ import org.opendatakit.properties.CommonToolProperties;
 import org.opendatakit.properties.PropertiesSingleton;
 import org.opendatakit.tables.R;
 import org.opendatakit.tables.activities.AbsBaseActivity;
+import org.opendatakit.tables.activities.MainActivity;
 import org.opendatakit.tables.activities.TableDisplayActivity;
 import org.opendatakit.tables.activities.TableLevelPreferencesActivity;
 import org.opendatakit.tables.application.Tables;
@@ -49,13 +54,15 @@ import org.opendatakit.tables.utils.TableNameStruct;
 import org.opendatakit.tables.views.components.TableNameStructAdapter;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * A fragment that displays a list of tables with a table actions button to the right of each of
  * them. The default fragment created in MainMenuActivity if there is no splash screen set
  */
-public class TableManagerFragment extends ListFragment implements DatabaseConnectionListener {
+public class TableManagerFragment extends ListFragment implements DatabaseConnectionListener, MainActivity.UXNotifyListener {
 
   private static final String TAG = TableManagerFragment.class.getSimpleName();
 
@@ -98,7 +105,6 @@ public class TableManagerFragment extends ListFragment implements DatabaseConnec
     }
 
     String appName = baseActivity.getAppName();
-
     PropertiesSingleton props = CommonToolProperties.get(getActivity().getApplication(), appName);
     String userSelectedDefaultLocale = props.getUserSelectedDefaultLocale();
 
@@ -106,6 +112,7 @@ public class TableManagerFragment extends ListFragment implements DatabaseConnec
     DbHandle db = null;
 
     List<TableNameStruct> tableNameStructs = new ArrayList<>();
+    final Constants.TABLE_SORT_ORDER fragSortOrder = getArguments() == null ? null : Constants.TABLE_SORT_ORDER.valueOf(this.getArguments().getString(CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER) );
 
     if (Tables.getInstance().getDatabase() != null) {
 
@@ -139,6 +146,18 @@ public class TableManagerFragment extends ListFragment implements DatabaseConnec
         }
       }
     }
+    if(fragSortOrder != null) {
+      Collections.sort(tableNameStructs, new Comparator<TableNameStruct>() {
+        @Override
+        public int compare(TableNameStruct o1, TableNameStruct o2)
+        {
+          if( fragSortOrder == Constants.TABLE_SORT_ORDER.SORT_DESC )
+            return o2.getLocalizedDisplayName().compareTo(o1.getLocalizedDisplayName());
+          else
+            return o1.getLocalizedDisplayName().compareTo(o2.getLocalizedDisplayName());
+        }
+      });
+    }
 
     if (mTpAdapter == null) {
       this.mTpAdapter = new TableNameStructAdapter(baseActivity, tableNameStructs);
@@ -149,7 +168,7 @@ public class TableManagerFragment extends ListFragment implements DatabaseConnec
     }
     // and set visibility of the no data vs. list
     if (this.getView() != null) {
-      TextView none = (TextView) this.getView().findViewById(android.R.id.empty);
+      TextView none = this.getView().findViewById(android.R.id.empty);
       View listing = this.getView().findViewById(android.R.id.list);
       if (tableNameStructs.isEmpty()) {
         if (Tables.getInstance().getDatabase() == null) {
@@ -268,5 +287,9 @@ public class TableManagerFragment extends ListFragment implements DatabaseConnec
   public void databaseUnavailable() {
     this.updateTableIdList();
   }
-
+  
+  @Override
+  public void notifyUIChanges() {
+    updateTableIdList();
+  }
 }

@@ -8,11 +8,19 @@ import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.Build;
 import android.os.RemoteException;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.espresso.matcher.ViewMatchers;
-import android.support.test.uiautomator.*;
 import android.view.View;
 import android.widget.Button;
+
+import androidx.test.core.app.ApplicationProvider;
+import androidx.test.espresso.matcher.ViewMatchers;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.uiautomator.By;
+import androidx.test.uiautomator.BySelector;
+import androidx.test.uiautomator.Direction;
+import androidx.test.uiautomator.UiDevice;
+import androidx.test.uiautomator.UiObject2;
+import androidx.test.uiautomator.Until;
+
 import org.opendatakit.tables.R;
 
 import java.io.IOException;
@@ -23,7 +31,12 @@ import java.util.regex.Pattern;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
-import static org.opendatakit.util.TestConstants.*;
+import static org.opendatakit.util.TestConstants.APP_INIT_TIMEOUT;
+import static org.opendatakit.util.TestConstants.APP_START_TIMEOUT;
+import static org.opendatakit.util.TestConstants.CUSTOM_HOME;
+import static org.opendatakit.util.TestConstants.OBJ_WAIT_TIMEOUT;
+import static org.opendatakit.util.TestConstants.TABLES_PKG_NAME;
+import static org.opendatakit.util.TestConstants.TABLES_SPECIFIC_SETTINGS;
 
 public class UAUtils {
   public static boolean turnOnCustomHome(UiDevice mDevice) {
@@ -84,7 +97,7 @@ public class UAUtils {
     mDevice.wait(Until.hasObject(By.pkg(getLauncherPackageName()).depth(0)), APP_START_TIMEOUT);
 
     //start app
-    Context context = InstrumentationRegistry.getContext();
+    Context context = InstrumentationRegistry.getInstrumentation().getContext();
     final Intent intent = context.getPackageManager().getLaunchIntentForPackage(pkgName);
     intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
     context.startActivity(intent);
@@ -123,11 +136,11 @@ public class UAUtils {
   }
 
   public static String getString(int id) {
-    return InstrumentationRegistry.getTargetContext().getString(id);
+    return ApplicationProvider.getApplicationContext().getString(id);
   }
 
   public static String getString(int id, Object... formatArgs) {
-    return InstrumentationRegistry.getTargetContext().getString(id, formatArgs);
+    return ApplicationProvider.getApplicationContext().getString(id, formatArgs);
   }
 
   /**
@@ -167,7 +180,7 @@ public class UAUtils {
     intent.addCategory(Intent.CATEGORY_HOME);
 
     // Use PackageManager to get the launcher package name
-    PackageManager pm = InstrumentationRegistry.getContext().getPackageManager();
+    PackageManager pm = InstrumentationRegistry.getInstrumentation().getContext().getPackageManager();
     ResolveInfo resolveInfo = pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY);
     return resolveInfo.activityInfo.packageName;
   }

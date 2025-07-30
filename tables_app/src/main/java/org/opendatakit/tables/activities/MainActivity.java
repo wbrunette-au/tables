@@ -15,8 +15,12 @@
  */
 package org.opendatakit.tables.activities;
 
-import android.app.*;
-import android.app.FragmentManager.BackStackEntry;
+import android.app.ActionBar;
+import android.app.Activity;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentManager.BackStackEntry;
+import androidx.fragment.app.FragmentTransaction;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -28,10 +32,14 @@ import android.widget.Toast;
 import org.opendatakit.activities.IInitResumeActivity;
 import org.opendatakit.consts.IntentConsts;
 import org.opendatakit.consts.RequestCodeConsts;
+import org.opendatakit.database.queries.ResumableQuery;
+import org.opendatakit.database.queries.SingleRowQuery;
+import org.opendatakit.database.utilities.QueryUtil;
 import org.opendatakit.fragment.AboutMenuFragment;
 import org.opendatakit.listener.DatabaseConnectionListener;
 import org.opendatakit.logging.WebLogger;
 import org.opendatakit.properties.CommonToolProperties;
+import org.opendatakit.properties.PropertiesSingleton;
 import org.opendatakit.tables.R;
 import org.opendatakit.tables.application.Tables;
 import org.opendatakit.tables.fragments.IWebFragment;
@@ -43,7 +51,7 @@ import org.opendatakit.tables.utils.IntentUtil;
 import org.opendatakit.tables.utils.SQLQueryStruct;
 import org.opendatakit.utilities.ODKFileUtils;
 import org.opendatakit.views.ODKWebView;
-import org.opendatakit.views.ViewDataQueryParams;
+import org.opendatakit.views.OdkData;
 import org.opendatakit.webkitserver.utilities.UrlUtils;
 
 import java.io.File;
@@ -56,6 +64,11 @@ import java.util.Collections;
  */
 public class MainActivity extends AbsBaseWebActivity
     implements DatabaseConnectionListener, IInitResumeActivity {
+
+  public interface UXNotifyListener
+  {
+    public void notifyUIChanges();
+  }
 
   // Used for logging
   private static final String TAG = MainActivity.class.getSimpleName();
@@ -71,6 +84,7 @@ public class MainActivity extends AbsBaseWebActivity
    * active fragment.
    */
   private ScreenType lastMenuType = null;
+  private PropertiesSingleton mPropSingleton;
 
   private static String[] checkForQueryParameter(File webFile) {
     String webFileToDisplayPath = webFile.getPath();
@@ -89,7 +103,7 @@ public class MainActivity extends AbsBaseWebActivity
     // Don't use viewID as there is only one webkit to return
 
     if (activeScreenType == ScreenType.WEBVIEW_SCREEN) {
-      FragmentManager mgr = this.getFragmentManager();
+      FragmentManager mgr = this.getSupportFragmentManager();
       Fragment newFragment = mgr.findFragmentByTag(activeScreenType.name());
       if (newFragment != null) {
         return ((IWebFragment) newFragment).getWebKit();
@@ -111,7 +125,7 @@ public class MainActivity extends AbsBaseWebActivity
   public String getUrlBaseLocation(boolean ifChanged, String fragmentID) {
     // TODO: do we need to track the ifChanged status?
     if (activeScreenType == ScreenType.WEBVIEW_SCREEN) {
-      FragmentManager mgr = this.getFragmentManager();
+      FragmentManager mgr = this.getSupportFragmentManager();
       Fragment newFragment = mgr.findFragmentByTag(activeScreenType.name());
       if (newFragment != null && webFileToDisplay != null) {
         // Split off query parameter if it exists
@@ -125,10 +139,10 @@ public class MainActivity extends AbsBaseWebActivity
         }
 
         if (webFileStrs.length > 1) {
-          return UrlUtils.getAsWebViewUri(this, getAppName(),
+          return UrlUtils.getAsWebViewUri(getAppName(),
               filename.concat(QUERY_START_PARAM).concat(webFileStrs[1]));
         } else {
-          return UrlUtils.getAsWebViewUri(this, getAppName(), filename);
+          return UrlUtils.getAsWebViewUri(getAppName(), filename);
         }
       }
     }
@@ -165,6 +179,7 @@ public class MainActivity extends AbsBaseWebActivity
           savedInstanceState.getString(CURRENT_FRAGMENT) :
           activeScreenType.name());
     }
+    mPropSingleton = CommonToolProperties.get( this ,mAppName);
   }
 
   @Override
@@ -189,7 +204,7 @@ public class MainActivity extends AbsBaseWebActivity
 
     outState.putString(CURRENT_FRAGMENT, activeScreenType.name());
     if (webFileToDisplay != null) {
-      outState.putString(Constants.IntentKeys.FILE_NAME,
+      outState.putString(OdkData.IntentKeys.FILE_NAME,
           ODKFileUtils.asRelativePath(mAppName, webFileToDisplay));
     }
   }
@@ -245,7 +260,7 @@ public class MainActivity extends AbsBaseWebActivity
   }
 
   private void popBackStack() {
-    FragmentManager mgr = getFragmentManager();
+    FragmentManager mgr = getSupportFragmentManager();
     int idxLast = mgr.getBackStackEntryCount() - 2;
     if (idxLast < 0) {
       Intent result = new Intent();
@@ -259,7 +274,27 @@ public class MainActivity extends AbsBaseWebActivity
 
   @Override
   public void initializationCompleted() {
-    popBackStack();
+    File newHome = getHomeScreen(null);
+
+    if ((newHome == null && webFileToDisplay == null) ||
+            (newHome != null && webFileToDisplay != null)) {
+      // no change to existence of custom home, return to the previous fragment
+      popBackStack();
+    } else {
+      // swap to webview if custom home was added
+      // swap to table manager if custom home was removed
+
+      webFileToDisplay = newHome;
+      // immediate because swapScreens operates on the back stack
+      getSupportFragmentManager().popBackStackImmediate(
+              null, FragmentManager.POP_BACK_STACK_INCLUSIVE);
+
+      if (newHome != null) {
+        swapScreens(ScreenType.WEBVIEW_SCREEN);
+      } else {
+        swapScreens(ScreenType.TABLE_MANAGER_SCREEN);
+      }
+    }
   }
 
   @Override
@@ -281,14 +316,22 @@ public class MainActivity extends AbsBaseWebActivity
         "swapScreens: Transitioning from " + (activeScreenType == null ?
             "-none-" :
             activeScreenType.name()) + " to " + newScreenType.name());
-    FragmentManager mgr = this.getFragmentManager();
+    FragmentManager mgr = this.getSupportFragmentManager();
     FragmentTransaction trans = null;
     Fragment newFragment;
     switch (newScreenType) {
     case TABLE_MANAGER_SCREEN:
       newFragment = mgr.findFragmentByTag(newScreenType.name());
+      String sortingOrder = mPropSingleton.getProperty(CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER);
       if (newFragment == null) {
         newFragment = new TableManagerFragment();
+        Bundle bundle = new Bundle();
+        bundle.putString(CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER, sortingOrder  );
+        newFragment.setArguments(bundle);
+      }
+      else {
+        newFragment.getArguments().putString(CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER, sortingOrder  );
+        ((TableManagerFragment) newFragment).notifyUIChanges();
       }
       break;
     case WEBVIEW_SCREEN:
@@ -366,6 +409,11 @@ public class MainActivity extends AbsBaseWebActivity
       menuInflater.inflate(R.menu.web_view_activity, menu);
     } else if (activeScreenType == ScreenType.TABLE_MANAGER_SCREEN) {
       menuInflater.inflate(R.menu.table_manager, menu);
+      String sortingOrder = mPropSingleton.getProperty(CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER);
+      if( sortingOrder != null && sortingOrder.equalsIgnoreCase( Constants.TABLE_SORT_ORDER.SORT_DESC.name() ) )
+        menu.findItem(R.id.menu_sort_name_desc).setChecked(true);
+      else
+        menu.findItem(R.id.menu_sort_name_asc).setChecked(true);
     }
     lastMenuType = activeScreenType;
 
@@ -441,6 +489,16 @@ public class MainActivity extends AbsBaseWebActivity
         Toast.makeText(this, R.string.sync_not_found, Toast.LENGTH_LONG).show();
       }
       return true;
+    case R.id.menu_sort_name_asc:
+      mPropSingleton.setProperties( Collections.singletonMap(
+                CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER, Constants.TABLE_SORT_ORDER.SORT_ASC.name() ));
+      swapScreens(activeScreenType);
+      return true;
+    case R.id.menu_sort_name_desc:
+      mPropSingleton.setProperties( Collections.singletonMap(
+                CommonToolProperties.KEY_PREF_TABLES_SORT_BY_ORDER, Constants.TABLE_SORT_ORDER.SORT_DESC.name() ));
+      swapScreens(activeScreenType);
+      return true;
     default:
       return super.onOptionsItemSelected(item);
     }
@@ -478,9 +536,8 @@ public class MainActivity extends AbsBaseWebActivity
   }
 
   @Override
-  public ViewDataQueryParams getViewQueryParams(String viewID) {
+  public ResumableQuery getViewQuery(String viewID) {
     // Ignore viewID, there is only one fragment
-
     Bundle bundle = this.getIntentExtras();
 
     String tableId = IntentUtil.retrieveTableIdFromBundle(bundle);
@@ -491,9 +548,12 @@ public class MainActivity extends AbsBaseWebActivity
 
     SQLQueryStruct sqlQueryStruct = IntentUtil.getSQLQueryStructFromBundle(bundle);
 
-    return new ViewDataQueryParams(tableId, rowId, sqlQueryStruct.whereClause,
-        sqlQueryStruct.selectionArgs, sqlQueryStruct.groupBy, sqlQueryStruct.having,
-        sqlQueryStruct.orderByElementKey, sqlQueryStruct.orderByDirection);
+
+    return new SingleRowQuery(tableId, rowId, sqlQueryStruct.selectionArgs,
+        sqlQueryStruct.whereClause, sqlQueryStruct.groupBy, sqlQueryStruct.having,
+        QueryUtil.convertStringToArray(sqlQueryStruct.orderByElementKey),
+        QueryUtil.convertStringToArray(sqlQueryStruct.orderByDirection),
+        null, null);
   }
 
   private enum ScreenType {

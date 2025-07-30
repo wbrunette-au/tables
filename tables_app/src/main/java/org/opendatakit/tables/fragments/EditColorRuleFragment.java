@@ -16,12 +16,10 @@
 package org.opendatakit.tables.fragments;
 
 import android.os.Bundle;
-import android.preference.EditTextPreference;
-import android.preference.ListPreference;
-import android.preference.Preference;
+import androidx.preference.EditTextPreference;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
 import android.widget.Toast;
-
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.data.ColorRule;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.utilities.ColumnUtil;
@@ -78,6 +76,10 @@ public class EditColorRuleFragment extends AbsTableLevelPreferenceFragment
    */
   private int mRulePosition;
   private ColorRuleGroup.Type mColorRuleGroupType;
+
+  @Override
+  public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+  }
 
   /**
    * @param colorRuleGroupType added to the arguments for the new EditColorRuleFragment
@@ -359,14 +361,14 @@ public class EditColorRuleFragment extends AbsTableLevelPreferenceFragment
   }
 
   private void initializeTextColor() {
-    EditColorPreference pref = (EditColorPreference) this
+    EditColorPreference pref = this
         .findPreference(Constants.PreferenceKeys.ColorRule.TEXT_COLOR);
     pref.initColorPickerListener(this, COLOR_PREF_KEY_TEXT,
         getActivity().getString(R.string.text_color), this.mTextColor);
   }
 
   private void initializeBackgroundColor() {
-    EditColorPreference pref = (EditColorPreference) this
+    EditColorPreference pref = this
         .findPreference(Constants.PreferenceKeys.ColorRule.BACKGROUND_COLOR);
     pref.initColorPickerListener(this, COLOR_PREF_KEY_BACKGROUND,
         getActivity().getString(R.string.background_color), this.mBackgroundColor);

@@ -15,14 +15,13 @@
  */
 package org.opendatakit.tables.fragments;
 
-import android.app.ListFragment;
+import androidx.fragment.app.ListFragment;
 import android.content.Context;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ArrayAdapter;
 import android.widget.ListAdapter;
 import android.widget.ListView;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.data.utilities.TableUtil;
 import org.opendatakit.database.data.OrderedColumns;

@@ -18,15 +18,17 @@ package org.opendatakit.tables.fragments;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.preference.EditTextPreference;
-import android.preference.ListPreference;
-import android.preference.Preference;
-import android.preference.Preference.OnPreferenceChangeListener;
-import android.preference.Preference.OnPreferenceClickListener;
+import androidx.preference.EditTextPreference;
+import androidx.preference.ListPreference;
+import androidx.preference.Preference;
+import androidx.preference.Preference.OnPreferenceChangeListener;
+import androidx.preference.Preference.OnPreferenceClickListener;
 import android.view.ContextMenu;
 import android.widget.Toast;
+
 import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.activities.IAppAwareActivity;
+import org.opendatakit.activities.utils.FilePickerUtil;
 import org.opendatakit.consts.RequestCodeConsts;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.TableViewType;
@@ -40,13 +42,16 @@ import org.opendatakit.logging.WebLogger;
 import org.opendatakit.properties.CommonToolProperties;
 import org.opendatakit.properties.PropertiesSingleton;
 import org.opendatakit.tables.R;
+import org.opendatakit.tables.activities.AbsTableActivity;
 import org.opendatakit.tables.activities.TableLevelPreferencesActivity;
 import org.opendatakit.tables.application.Tables;
 import org.opendatakit.tables.preferences.DefaultViewTypePreference;
 import org.opendatakit.tables.preferences.FileSelectorPreference;
+import org.opendatakit.tables.types.FormType;
 import org.opendatakit.tables.utils.Constants;
 import org.opendatakit.tables.utils.PreferenceUtil;
 import org.opendatakit.utilities.ODKFileUtils;
+import org.opendatakit.utilities.ODKXFileUriUtils;
 
 import java.io.File;
 
@@ -79,11 +84,11 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
    * @param savedInstanceState the bundle that we saved when being destroyed/paused
    */
   @Override
-  public void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
+  public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
     // AppName may not be available...
     // Let's load preferences from the resource.
-    this.addPreferencesFromResource(R.xml.table_preference);
+    setPreferencesFromResource(R.xml.table_preference, rootKey);
+//    this.addPreferencesFromResource(R.xml.table_preference);
   }
 
   /**
@@ -113,20 +118,7 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
    */
   @Override
   public void onActivityResult(final int requestCode, final int resultCode, final Intent data) {
-    // If the database isn't up, defer handling of the result until later because
-    // setListViewFileName calls atomicSetListViewFilename which needs the database to be up to work
-    /* this is the old way to do it, which sucked
-    if (!dbUp) {
-      if (savedIntent != null) {
-        // crash tables :(
-        throw new IllegalStateException("only queueing one activity result at a time");
-      }
-      savedReq = requestCode; savedRes = resultCode; savedIntent = data;
-      return;
-    } else {
-      savedIntent = null;
-    }
-    */
+
     // this way still sucks, just slightly less
     if (Tables.getInstance().getDatabase() == null) {
       //WebLogger.getLogger(getAppName()).i(TAG, "Database not up yet! Sleeping");
@@ -151,69 +143,48 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
       return;
     }
     //WebLogger.getLogger(getAppName()).i(TAG, "Database now up, attempting");
-    String fullPath;
     String relativePath;
     // temp
     //WebLogger.getLogger(getAppName()).i(TAG, String.format(Locale.getDefault(), "%d", requestCode));
 
-    switch (requestCode) {
-    case RequestCodeConsts.RequestCodes.CHOOSE_LIST_FILE:
-      if (data != null) {
-        try {
-          fullPath = getFullPathFromIntent(data);
-          relativePath = getRelativePathOfFile(fullPath);
-          //WebLogger.getLogger(getAppName()).i(TAG, "Setting list file to " + relativePath);
-          this.setListViewFileName(relativePath);
-          //WebLogger.getLogger(getAppName()).i(TAG, "success");
-        } catch (IllegalArgumentException e) {
-          //WebLogger.getLogger(getAppName()).e(TAG, "failure");
-          WebLogger.getLogger(getAppName()).printStackTrace(e);
-          Toast.makeText(getActivity(),
-              getString(R.string.file_not_under_app_dir, ODKFileUtils.getAppFolder(getAppName())),
-              Toast.LENGTH_LONG).show();
-        }
-      }
-      break;
-    case RequestCodeConsts.RequestCodes.CHOOSE_DETAIL_FILE:
-      if (data != null) {
-        try {
-          fullPath = getFullPathFromIntent(data);
-          relativePath = getRelativePathOfFile(fullPath);
-          this.setDetailViewFileName(relativePath);
-        } catch (IllegalArgumentException e) {
-          WebLogger.getLogger(getAppName()).printStackTrace(e);
-          Toast.makeText(getActivity(),
-              getString(R.string.file_not_under_app_dir, ODKFileUtils.getAppFolder(getAppName())),
-              Toast.LENGTH_LONG).show();
-        }
-      }
-      break;
-    case RequestCodeConsts.RequestCodes.CHOOSE_MAP_FILE:
-      if (data != null) {
-        try {
-          fullPath = getFullPathFromIntent(data);
-          relativePath = getRelativePathOfFile(fullPath);
-          this.setMapListViewFileName(relativePath);
-        } catch (IllegalArgumentException e) {
-          WebLogger.getLogger(getAppName()).printStackTrace(e);
-          Toast.makeText(getActivity(),
-              getString(R.string.file_not_under_app_dir, ODKFileUtils.getAppFolder(getAppName())),
-              Toast.LENGTH_LONG).show();
-        }
-      }
-      break;
-    default:
+    if (data == null ||
+            ((RequestCodeConsts.RequestCodes.CHOOSE_LIST_FILE != requestCode)
+                    && (RequestCodeConsts.RequestCodes.CHOOSE_DETAIL_FILE != requestCode)
+                    && (RequestCodeConsts.RequestCodes.CHOOSE_MAP_FILE != requestCode))
+      ) {
       super.onActivityResult(requestCode, resultCode, data);
-    }
-    try {
-      WebLogger.getLogger(getAppName()).i(TAG, "Attempting to reinit prefs");
-      this.initializeAllPreferences();
-    } catch (ServicesAvailabilityException e) {
-      WebLogger.getLogger(getAppName()).e(TAG, "failed");
-      WebLogger.getLogger(getAppName()).printStackTrace(e);
-      Toast.makeText(getActivity(), "Unable to access database", Toast.LENGTH_LONG).show();
+      return;
     }
 
+    Uri resultUri = FilePickerUtil.getUri(data);
+    if(resultUri != null) {
+      relativePath = ODKXFileUriUtils.ODKXRemainingPath(getAppName(), resultUri);
+      if (relativePath != null) {
+        switch (requestCode) {
+          case RequestCodeConsts.RequestCodes.CHOOSE_LIST_FILE:
+            this.setListViewFileName(relativePath);
+            break;
+          case RequestCodeConsts.RequestCodes.CHOOSE_DETAIL_FILE:
+            this.setDetailViewFileName(relativePath);
+            break;
+          case RequestCodeConsts.RequestCodes.CHOOSE_MAP_FILE:
+            this.setMapListViewFileName(relativePath);
+            break;
+        }
+        try {
+          WebLogger.getLogger(getAppName()).i(TAG, "Attempting to reinit prefs");
+          this.initializeAllPreferences();
+        } catch (ServicesAvailabilityException e) {
+          WebLogger.getLogger(getAppName()).e(TAG, "failed");
+          WebLogger.getLogger(getAppName()).printStackTrace(e);
+          Toast.makeText(getActivity(), "Unable to access database", Toast.LENGTH_LONG).show();
+        }
+      } else {
+        Toast.makeText(getActivity(),
+                getString(R.string.file_not_under_app_dir, ODKFileUtils.getAppFolder(getAppName())),
+                Toast.LENGTH_LONG).show();
+      }
+    }
   }
 
   /**
@@ -364,6 +335,7 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
   private void initializeDefaultViewType() throws ServicesAvailabilityException {
     // We have to set the current default view and disable the entries that
     // don't apply to this table.
+    final AbsTableActivity mActivity = ((AbsTableActivity) getActivity());
     DefaultViewTypePreference viewPref = (DefaultViewTypePreference) this
         .findListPreference(Constants.PreferenceKeys.Table.DEFAULT_VIEW_TYPE);
     viewPref.setFields(getTableId(), getColumnDefinitions());
@@ -371,21 +343,96 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
 
       @Override
       public boolean onPreferenceChange(Preference preference, Object newValue) {
-        WebLogger.getLogger(getAppName())
+        WebLogger.getLogger(mActivity.getAppName())
             .e(TAG, "[onPreferenceChange] for default view preference. Pref is: " + newValue);
         String selectedValue = newValue.toString();
-        PreferenceUtil.setDefaultViewType(getActivity(), getAppName(), getTableId(),
-            TableViewType.valueOf(selectedValue));
-        return true;
+        DefaultViewTypePreference pref = ((DefaultViewTypePreference) preference);
+        if (pref.isValidSelection(selectedValue)) {
+          PreferenceUtil.setDefaultViewType(mActivity, mActivity.getAppName(), getTableId(),
+              TableViewType.valueOf(selectedValue));
+          return true;
+        } else {
+          Toast.makeText(mActivity, mActivity.getString(R.string.invalid_default_view_type),
+              Toast.LENGTH_LONG).show();
+          return false;
+        }
       }
     });
   }
 
   /**
-   * Does nothing, this is handled in
-   * {@link org.opendatakit.tables.preferences.EditFormDialogPreference}
+   * Sets EditTextPreference for Survey form
    */
   private void initializeDefaultForm() {
+    EditTextPreference editFormPref = this
+        .findPreference(Constants.PreferenceKeys.Table.DEFAULT_FORM);
+    final AbsTableActivity mActivity = ((AbsTableActivity) getActivity());
+
+    try {
+      String text = FormType.constructFormType((BaseActivity) getContext(), mActivity.getAppName(),
+          mActivity.getTableId()).getFormId();
+      editFormPref.setText(text);
+    } catch (ServicesAvailabilityException e) {
+      WebLogger.getLogger(mActivity.getAppName()).printStackTrace(e);
+      Toast.makeText(getContext(), getContext().getString(R.string.unable_to_retrieve_form_type),
+          Toast.LENGTH_LONG).show();
+    }
+
+    editFormPref.setOnPreferenceChangeListener(new OnPreferenceChangeListener() {
+      @Override
+      public boolean onPreferenceChange(Preference preference, Object newValue) {
+        String formId = (String) newValue;
+        if (formId.isEmpty()) {
+          Toast.makeText(getContext(), mActivity.getString(R.string.invalid_form), Toast.LENGTH_LONG).show();
+          return false;
+        }
+
+        if (!ODKFileUtils.VALID_FOLDER_PATTERN.matcher(formId).matches()) {
+          Toast
+              .makeText(requireContext(), getString(R.string.invalid_form_name), Toast.LENGTH_LONG)
+              .show();
+          return false;
+        }
+
+        String formDir = ODKFileUtils
+            .getFormFolder(mActivity.getAppName(), mActivity.getTableId(), formId);
+        File f = new File(formDir);
+        File formDefJson = new File(f, ODKFileUtils.FORMDEF_JSON_FILENAME);
+        if (!f.exists() || !f.isDirectory() || !formDefJson.exists() || !formDefJson.isFile()) {
+          Toast.makeText(getContext(), mActivity.getString(R.string.invalid_form), Toast.LENGTH_LONG).show();
+          return false;
+        }
+
+        UserDbInterface dbInt = Tables.getInstance().getDatabase();
+        DbHandle db = null;
+        try {
+          FormType formType = FormType.constructFormType((BaseActivity) getContext(),
+              mActivity.getAppName(), mActivity.getTableId());
+          formType.setFormId(formId);
+          AbsTableActivity tableActivity = (AbsTableActivity) getContext();
+
+          db = dbInt.openDatabase(tableActivity.getAppName());
+          formType.persist(dbInt, tableActivity.getAppName(), db, tableActivity.getTableId());
+        } catch (ServicesAvailabilityException e) {
+          WebLogger.getLogger(mActivity.getAppName()).printStackTrace(e);
+          Toast.makeText(getContext(), getContext().getString(R.string.unable_to_save_db_changes),
+              Toast.LENGTH_LONG).show();
+        } finally {
+          if (db != null) {
+            try {
+              dbInt.closeDatabase(mActivity.getAppName(), db);
+            } catch (ServicesAvailabilityException e) {
+              Toast.makeText(mActivity, R.string.unable_to_save_db_changes, Toast.LENGTH_LONG)
+                  .show();
+              WebLogger.getLogger(mActivity.getAppName()).e(TAG, "Failed to save default form");
+              WebLogger.getLogger(mActivity.getAppName()).printStackTrace(e);
+            }
+          }
+        }
+
+        return true;
+      }
+    });
   }
 
   /**
@@ -413,7 +460,7 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
    * @throws ServicesAvailabilityException if the database is down
    */
   private void initializeListFile(DbHandle db) throws ServicesAvailabilityException {
-    FileSelectorPreference listPref = (FileSelectorPreference) this
+    FileSelectorPreference listPref = this
         .findPreference(Constants.PreferenceKeys.Table.LIST_FILE);
     listPref.setFields(this, RequestCodeConsts.RequestCodes.CHOOSE_LIST_FILE,
         ((IAppAwareActivity) getActivity()).getAppName());
@@ -429,7 +476,7 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
    * @throws ServicesAvailabilityException if the database is down
    */
   private void initializeMapListFile(DbHandle db) throws ServicesAvailabilityException {
-    FileSelectorPreference mapListPref = (FileSelectorPreference) this
+    FileSelectorPreference mapListPref = this
         .findPreference(Constants.PreferenceKeys.Table.MAP_LIST_FILE);
     mapListPref.setFields(this, RequestCodeConsts.RequestCodes.CHOOSE_MAP_FILE,
         ((IAppAwareActivity) getActivity()).getAppName());
@@ -448,7 +495,7 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
    * @throws ServicesAvailabilityException if the database is down
    */
   private void initializeDetailFile(DbHandle db) throws ServicesAvailabilityException {
-    FileSelectorPreference detailPref = (FileSelectorPreference) this
+    FileSelectorPreference detailPref = this
         .findPreference(Constants.PreferenceKeys.Table.DETAIL_FILE);
     detailPref.setFields(this, RequestCodeConsts.RequestCodes.CHOOSE_DETAIL_FILE,
         ((IAppAwareActivity) getActivity()).getAppName());
@@ -579,16 +626,6 @@ public class TablePreferenceFragment extends AbsTableLevelPreferenceFragment
     });
   }
 
-  /**
-   * Helper method to get the relative path of a file from the full path
-   *
-   * @param fullPath the path to the file
-   * @return the relative path to fullPath
-   */
-  private String getRelativePathOfFile(String fullPath) {
-    return ODKFileUtils
-        .asRelativePath(((IAppAwareActivity) getActivity()).getAppName(), new File(fullPath));
-  }
 
   //private boolean dbUp;
   //private int savedReq, savedRes; private Intent savedIntent = null;

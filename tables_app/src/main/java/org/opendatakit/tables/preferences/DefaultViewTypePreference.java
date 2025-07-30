@@ -15,13 +15,9 @@
  */
 package org.opendatakit.tables.preferences;
 
-import android.app.AlertDialog.Builder;
 import android.content.Context;
-import android.preference.ListPreference;
+import androidx.preference.ListPreference;
 import android.util.AttributeSet;
-import android.widget.ListAdapter;
-import android.widget.Toast;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.data.TableViewType;
 import org.opendatakit.data.utilities.TableUtil;
@@ -31,10 +27,8 @@ import org.opendatakit.database.service.UserDbInterface;
 import org.opendatakit.exception.ServicesAvailabilityException;
 import org.opendatakit.logging.WebLogger;
 import org.opendatakit.tables.R;
-import org.opendatakit.tables.activities.AbsTableActivity;
 import org.opendatakit.tables.application.Tables;
 import org.opendatakit.tables.data.PossibleTableViewTypes;
-import org.opendatakit.tables.views.components.TableViewTypeAdapter;
 
 import java.util.Arrays;
 
@@ -63,8 +57,8 @@ public class DefaultViewTypePreference extends ListPreference {
    */
   public DefaultViewTypePreference(Context context, AttributeSet attrs) {
     super(context, attrs);
-    mContext = context;
     if (context instanceof IAppAwareActivity) {
+      mContext = context;
       mAppName = ((IAppAwareActivity) context).getAppName();
     } else {
       throw new IllegalArgumentException("Must be in an activity that knows the app name");
@@ -113,27 +107,16 @@ public class DefaultViewTypePreference extends ListPreference {
     }
   }
 
-  @Override
-  protected void onPrepareDialogBuilder(Builder builder) {
-    // We want to enable/disable the correct list.
-    if (mPossibleViewTypes == null) {
-      // The user rotated the screen and TablePreferenceFragment.initializeDefaultViewType hasn't
-      // been called yet to call setFields
-      if (mContext instanceof AbsTableActivity) {
-        AbsTableActivity act = (AbsTableActivity) mContext;
-        try {
-          setFields(act.getTableId(), act.getColumnDefinitions());
-        } catch (ServicesAvailabilityException e) {
-          WebLogger.getLogger(act.getAppName()).e(TAG, "Could not access database");
-          WebLogger.getLogger(act.getAppName()).printStackTrace(e);
-          Toast.makeText(act, R.string.database_unavailable, Toast.LENGTH_LONG).show();
-        }
-      }
+  public boolean isValidSelection(String newValue) {
+    if (newValue.equals(TableViewType.SPREADSHEET.name())) {
+      return mPossibleViewTypes.spreadsheetViewIsPossible();
+    } else if (newValue.equals(TableViewType.LIST.name())) {
+      return mPossibleViewTypes.listViewIsPossible();
+    } else if (newValue.equals(TableViewType.MAP.name())) {
+      return mPossibleViewTypes.mapViewIsPossible();
+    } else {
+      WebLogger.getLogger(mAppName).e(TAG, "unrecognized entryValue: " + newValue);
+      return false;
     }
-    ListAdapter adapter = new TableViewTypeAdapter(mContext, mAppName,
-        android.R.layout.select_dialog_singlechoice, getEntries(), getEntryValues(),
-        mPossibleViewTypes);
-    builder.setAdapter(adapter, this);
-    super.onPrepareDialogBuilder(builder);
   }
 }

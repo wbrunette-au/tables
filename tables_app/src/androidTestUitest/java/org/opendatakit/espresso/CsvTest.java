@@ -1,28 +1,50 @@
 package org.opendatakit.espresso;
 
+import static androidx.test.espresso.Espresso.onData;
+import static androidx.test.espresso.Espresso.onView;
+import static androidx.test.espresso.action.ViewActions.click;
+import static androidx.test.espresso.action.ViewActions.typeText;
+import static androidx.test.espresso.assertion.ViewAssertions.matches;
+import static androidx.test.espresso.intent.Intents.intending;
+import static androidx.test.espresso.intent.matcher.IntentMatchers.hasAction;
+import static androidx.test.espresso.matcher.RootMatchers.isPlatformPopup;
+import static androidx.test.espresso.matcher.ViewMatchers.assertThat;
+import static androidx.test.espresso.matcher.ViewMatchers.isCompletelyDisplayed;
+import static androidx.test.espresso.matcher.ViewMatchers.withClassName;
+import static androidx.test.espresso.matcher.ViewMatchers.withId;
+import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.is;
+import static org.opendatakit.util.TestConstants.APP_NAME;
+import static org.opendatakit.util.TestConstants.T_HOUSE_DISPLAY_NAME;
+import static org.opendatakit.util.TestConstants.T_HOUSE_TABLE_ID;
+
+import android.Manifest;
 import android.app.Activity;
 import android.app.Instrumentation;
 import android.content.Intent;
 import android.net.Uri;
-import android.support.test.InstrumentationRegistry;
-import android.support.test.espresso.Espresso;
-import android.support.test.espresso.intent.rule.IntentsTestRule;
-import android.support.test.filters.LargeTest;
-import android.support.test.runner.AndroidJUnit4;
-import android.support.test.uiautomator.UiDevice;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
-import org.junit.Before;
+
+import androidx.test.espresso.intent.rule.IntentsTestRule;
+import androidx.test.filters.LargeTest;
+import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.rule.GrantPermissionRule;
+import androidx.test.uiautomator.UiDevice;
+
 import org.junit.After;
-import org.junit.ClassRule;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.junit.runner.RunWith;
+import org.junit.rules.RuleChain;
+import org.junit.rules.TestRule;
 import org.opendatakit.tables.R;
+import org.opendatakit.tables.activities.ImportCSVActivity;
 import org.opendatakit.tables.activities.MainActivity;
 import org.opendatakit.tables.utils.TableFileUtils;
-import org.opendatakit.util.DisableAnimationsRule;
 import org.opendatakit.util.EspressoUtils;
 import org.opendatakit.util.ODKMatchers;
 import org.opendatakit.util.UAUtils;
@@ -31,27 +53,18 @@ import org.opendatakit.utilities.ODKFileUtils;
 import java.io.File;
 import java.io.FilenameFilter;
 
-import static android.support.test.espresso.Espresso.*;
-import static android.support.test.espresso.action.ViewActions.*;
-import static android.support.test.espresso.assertion.ViewAssertions.*;
-import static android.support.test.espresso.intent.Intents.intending;
-import static android.support.test.espresso.intent.matcher.IntentMatchers.hasAction;
-import static android.support.test.espresso.matcher.RootMatchers.isPlatformPopup;
-import static android.support.test.espresso.matcher.ViewMatchers.*;
-import static org.hamcrest.Matchers.*;
-import static org.opendatakit.util.TestConstants.*;
 
-@RunWith(AndroidJUnit4.class)
 @LargeTest
 public class CsvTest {
+
   private static final String VALID_QUALIFIER = "TEST_VALID";
   private static final String INVALID_QUALIFIER = "TEST_INVALID/";
-  @ClassRule
-  public static DisableAnimationsRule disableAnimationsRule = new DisableAnimationsRule();
+
   private Boolean initSuccess = null;
   private UiDevice mDevice;
-  @Rule
-  public IntentsTestRule<MainActivity> mActivityRule = new IntentsTestRule<MainActivity>(
+
+  // don't annotate used in chain rule
+  private IntentsTestRule<MainActivity> mIntentsRule = new IntentsTestRule<MainActivity>(
       MainActivity.class) {
     @Override
     protected void beforeActivityLaunched() {
@@ -63,6 +76,18 @@ public class CsvTest {
       }
     }
   };
+
+  // don't annotate used in chain rule
+  private GrantPermissionRule grantPermissionRule = GrantPermissionRule.grant(
+      Manifest.permission.WRITE_EXTERNAL_STORAGE,
+      Manifest.permission.READ_EXTERNAL_STORAGE,
+      Manifest.permission.ACCESS_FINE_LOCATION
+  );
+
+  @Rule
+  public TestRule chainedRules = RuleChain
+      .outerRule(grantPermissionRule)
+      .around(mIntentsRule);
 
   private static int getTableCount() {
     return new File(ODKFileUtils.getTablesFolder(TableFileUtils.getDefaultAppName()))
@@ -82,7 +107,7 @@ public class CsvTest {
   public void setup() {
     UAUtils.assertInitSucess(initSuccess);
     EspressoUtils.openTableManagerFromCustomHome();
-    onView(withId(R.id.menu_table_manager_export)).perform(click());
+
   }
 
   @After
@@ -104,6 +129,7 @@ public class CsvTest {
 
   @Test
   public void exportCsv_tableList() {
+    onView(withId(R.id.menu_table_manager_export)).perform(click());
     //open table chooser
     onView(withClassName(endsWith("Spinner"))).perform(click());
 
@@ -114,6 +140,7 @@ public class CsvTest {
 
   @Test
   public void exportCsv_validQualifier() {
+    onView(withId(R.id.menu_table_manager_export)).perform(click());
     //open table chooser
     onView(withClassName(is(Spinner.class.getName()))).perform(click());
 
@@ -149,6 +176,8 @@ public class CsvTest {
   public void exportCsv_invalidQualifier() {
     int fileCount = getOutputDirFileCount();
 
+    onView(withId(R.id.menu_table_manager_export)).perform(click());
+
     //open table chooser
     onView(withClassName(is(Spinner.class.getName()))).perform(click());
 
@@ -163,7 +192,7 @@ public class CsvTest {
 
     try {
       //Check that error message is shown
-      onView(withText(EspressoUtils.getString(mActivityRule, R.string.export_failure)))
+      onView(withText(EspressoUtils.getString(mIntentsRule, R.string.export_failure)))
           .check(matches(isCompletelyDisplayed()));
 
       //Check that csv was not exported
@@ -185,19 +214,15 @@ public class CsvTest {
   @Test
   public void importCsv_fileOutOfAppDir() {
     //stub intent
-    intending(hasAction(OI_PICK_FILE)).respondWith(
+    intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(
         new Instrumentation.ActivityResult(Activity.RESULT_OK,
             new Intent().setData(Uri.fromFile(new File("/file")))));
 
     //go to csv import
-    Espresso.pressBack();
-    Espresso.pressBack();
     onView(withId(R.id.menu_table_manager_import)).perform(click());
     onView(withText(R.string.import_choose_csv_file)).perform(click());
 
     //check toast
-    EspressoUtils.toastMsgMatcher(mActivityRule, is(EspressoUtils
-        .getString(mActivityRule, R.string.file_not_under_app_dir,
-            ODKFileUtils.getAppFolder(APP_NAME))));
+    EspressoUtils.toastMsgMatcher(mIntentsRule, is(ImportCSVActivity.IMPORT_FILE_MUST_RESIDE_IN_OPENDATAKIT_FOLDER));
   }
 }

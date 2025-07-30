@@ -20,7 +20,6 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebView;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.logging.WebLogger;
 import org.opendatakit.tables.R;
 import org.opendatakit.tables.application.Tables;
@@ -45,6 +44,24 @@ public class WebFragment extends AbsTablesFragment implements IWebFragment {
         .d(TAG, "[onCreateView] activity is: " + getActivity().getClass().getSimpleName());
 
     return inflater.inflate(R.layout.web_view_container, container, false);
+  }
+
+  @Override
+  public void onResume() {
+    super.onResume();
+    OdkTablesWebView view = getWebKit();
+    if ( view != null ) {
+      view.onResume();
+    }
+  }
+
+  @Override
+  public void onPause() {
+    super.onPause();
+    OdkTablesWebView view = getWebKit();
+    if ( view != null ) {
+      view.onPause();
+    }
   }
 
   @Override

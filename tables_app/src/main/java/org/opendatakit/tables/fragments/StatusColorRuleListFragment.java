@@ -16,14 +16,13 @@
 package org.opendatakit.tables.fragments;
 
 import android.app.Activity;
-import android.app.ListFragment;
+import androidx.fragment.app.ListFragment;
 import android.content.Context;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Toast;
-import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.utilities.TableUtil;

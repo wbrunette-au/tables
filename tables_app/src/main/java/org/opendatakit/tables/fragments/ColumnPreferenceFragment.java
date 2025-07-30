@@ -17,10 +17,10 @@ package org.opendatakit.tables.fragments;
 
 import android.content.Context;
 import android.os.Bundle;
-import android.preference.EditTextPreference;
-import android.preference.Preference;
+import androidx.preference.EditTextPreference;
+import androidx.preference.Preference;
 import android.widget.Toast;
-import org.apache.commons.lang3.StringUtils;
+
 import org.opendatakit.activities.BaseActivity;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.utilities.ColumnUtil;
@@ -107,8 +107,7 @@ public class ColumnPreferenceFragment extends AbsTableLevelPreferenceFragment {
    * @param savedInstanceState a bundle that contains our saved element key
    */
   @Override
-  public void onCreate(Bundle savedInstanceState) {
-    super.onCreate(savedInstanceState);
+  public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
     if (savedInstanceState != null && savedInstanceState.containsKey(COL_ELEM_KEY)) {
       mElementKey = savedInstanceState.getString(COL_ELEM_KEY);
     }
@@ -196,7 +195,7 @@ public class ColumnPreferenceFragment extends AbsTableLevelPreferenceFragment {
    */
   private void initializeColumnType() {
     EditTextPreference pref = this.findEditTextPreference(Constants.PreferenceKeys.Column.TYPE);
-    pref.setSummary(StringUtils.capitalize(retrieveColumnDefinition().getType().getElementType()));
+    pref.setSummary(retrieveColumnDefinition().getType().getElementType().toUpperCase());
   }
 
   /**

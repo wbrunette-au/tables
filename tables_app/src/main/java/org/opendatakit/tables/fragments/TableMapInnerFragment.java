@@ -15,6 +15,7 @@
  */
 package org.opendatakit.tables.fragments;
 
+import android.Manifest;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.view.View;
@@ -25,20 +26,25 @@ import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnMapClickListener;
 import com.google.android.gms.maps.GoogleMap.OnMapLongClickListener;
 import com.google.android.gms.maps.GoogleMap.OnMarkerClickListener;
-import com.google.android.gms.maps.MapFragment;
+import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.OnMapReadyCallback;
-import com.google.android.gms.maps.model.*;
-import org.opendatakit.activities.BaseActivity;
+import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.CameraPosition;
+import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
+import com.google.android.gms.maps.model.Marker;
+import com.google.android.gms.maps.model.MarkerOptions;
 import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.data.ColorGuide;
 import org.opendatakit.data.ColorGuideGroup;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.data.utilities.TableUtil;
 import org.opendatakit.database.LocalKeyValueStoreConstants;
-import org.opendatakit.database.data.ColumnDefinition;
-import org.opendatakit.database.data.OrderedColumns;
-import org.opendatakit.database.data.Row;
-import org.opendatakit.database.data.UserTable;
+import org.opendatakit.database.data.*;
+import org.opendatakit.database.queries.ArbitraryQuery;
+import org.opendatakit.database.queries.ResumableQuery;
+import org.opendatakit.database.queries.SimpleQuery;
+import org.opendatakit.database.queries.SingleRowQuery;
 import org.opendatakit.database.service.DbHandle;
 import org.opendatakit.database.service.UserDbInterface;
 import org.opendatakit.exception.ServicesAvailabilityException;
@@ -47,7 +53,9 @@ import org.opendatakit.tables.R;
 import org.opendatakit.tables.activities.AbsBaseActivity;
 import org.opendatakit.tables.activities.TableDisplayActivity;
 import org.opendatakit.tables.application.Tables;
+import org.opendatakit.tables.utils.Constants;
 import org.opendatakit.utilities.ODKFileUtils;
+import org.opendatakit.utilities.RuntimePermissionUtils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -59,8 +67,7 @@ import java.util.Map;
  * @author Chris Gelon (cgelon)
  * @author sudar.sam@gmail.com
  */
-public class TableMapInnerFragment extends MapFragment implements OnMapReadyCallback {
-
+public class TableMapInnerFragment extends SupportMapFragment implements OnMapReadyCallback {
   private static final String TAG = TableMapInnerFragment.class.getSimpleName();
 
   private static final int INVALID_INDEX = -1;
@@ -92,6 +99,11 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
    * The zoom level of the camera. Used when saving the instance.
    */
   private static final String SAVE_ZOOM = "saveZoom";
+
+  /**
+   * Minimum distance from a marker to the edge of the screen when setting up the initial camera position
+   */
+  private static final int PADDING = 50;
 
   private static final float initCameraValue = -1;
   /**
@@ -197,9 +209,21 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
                 CameraUpdateFactory.newLatLngZoom(new LatLng(savedLatitude, savedLongitude), savedZoom));
       }
 
-      this.map.setMyLocationEnabled(true);
       this.map.setOnMapLongClickListener(getOnMapLongClickListener());
       this.map.setOnMapClickListener(getOnMapClickListener());
+
+      String[] permissions = new String[] {
+              Manifest.permission.ACCESS_FINE_LOCATION,
+              Manifest.permission.ACCESS_COARSE_LOCATION
+      };
+
+      if (RuntimePermissionUtils.checkSelfAnyPermission(getActivity(), permissions)) {
+        this.map.setMyLocationEnabled(true);
+      } else {
+        if (!RuntimePermissionUtils.shouldShowAnyPermissionRationale(getActivity(), permissions))
+        // this is when location permission is permanently denied
+        Toast.makeText(getActivity(), R.string.location_permission_perm_denied, Toast.LENGTH_LONG).show();
+      }
     }
   }
 
@@ -310,13 +334,38 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
 
     if (mLatitudeElementKey == null || mLongitudeElementKey == null) {
       Toast.makeText(getActivity(), getActivity().getString(R.string.lat_long_not_set),
-          Toast.LENGTH_LONG).show();
+              Toast.LENGTH_LONG).show();
       return;
     }
 
-    UserTable table = activity.getUserTable();
-
     OrderedColumns orderedDefns = activity.getColumnDefinitions();
+    ResumableQuery resumableQuery = activity.getViewQuery(Constants.FragmentTags.MAP_INNER_MAP);
+
+    UserTable table;
+    try {
+      if (resumableQuery instanceof ArbitraryQuery) {
+        ArbitraryQuery query = (ArbitraryQuery) resumableQuery;
+        table = Tables.getInstance().getDatabase().arbitrarySqlQuery(activity.getAppName(),
+            Tables.getInstance().getDatabase().openDatabase(activity.getAppName()),
+            query.getTableId(), orderedDefns, query.getSqlCommand(), query.getSqlBindArgs(), -1, 0);
+      } else if (resumableQuery instanceof SimpleQuery || resumableQuery instanceof SingleRowQuery) {
+        SimpleQuery query = (SimpleQuery) resumableQuery;
+        table = Tables.getInstance().getDatabase().simpleQuery(activity.getAppName(),
+            Tables.getInstance().getDatabase().openDatabase(activity.getAppName()),
+            query.getTableId(), orderedDefns, query.getWhereClause(), query.getSqlBindArgs(),
+            query.getGroupByArgs(), query.getHavingClause(), query.getOrderByColNames(),
+            query.getOrderByDirections(), -1, 0);
+      } else {
+        String appName = ((IAppAwareActivity) getActivity()).getAppName();
+        WebLogger.getLogger(appName).e(TAG, "invalid query type");
+        return;
+      }
+    } catch (ServicesAvailabilityException sae) {
+      String appName = ((IAppAwareActivity) getActivity()).getAppName();
+      WebLogger.getLogger(appName).e(TAG, "simpleQuery failed");
+      WebLogger.getLogger(appName).printStackTrace(sae);
+      return;
+    }
 
     if (table != null && orderedDefns != null) {
       // Try to find the map columns in the store.
@@ -324,15 +373,17 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
       ColumnDefinition longitudeColumn = orderedDefns.find(mLongitudeElementKey);
 
       // Find the locations from entries in the table.
-      LatLng firstLocation = null;
+      LatLngBounds.Builder builder = new LatLngBounds.Builder();
+      int markers = 0;
+      LatLng onlyLocation = null;
 
       // Go through each row and create a marker at the specified location.
       for (int i = 0; i < table.getNumberOfRows(); i++) {
-        Row row = table.getRowAtIndex(i);
-        String latitudeString = row.getDataByKey(latitudeColumn.getElementKey());
-        String longitudeString = row.getDataByKey(longitudeColumn.getElementKey());
+        TypedRow row = table.getRowAtIndex(i);
+        String latitudeString = row.getStringValueByKey(latitudeColumn.getElementKey());
+        String longitudeString = row.getStringValueByKey(longitudeColumn.getElementKey());
         if (latitudeString == null || longitudeString == null || latitudeString.isEmpty()
-            || longitudeString.isEmpty()) {
+                || longitudeString.isEmpty()) {
           continue;
         }
 
@@ -341,28 +392,28 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
         if (location == null) {
           continue;
         }
-        if (firstLocation == null) {
-          firstLocation = location;
-        }
+        markers++;
+        builder.include(location);
+        onlyLocation = location;
 
         if (map != null) {
           Marker marker = map.addMarker(new MarkerOptions().position(location).draggable(false)
-              .icon(BitmapDescriptorFactory.defaultMarker(getHueForRow(i))));
+                  .icon(BitmapDescriptorFactory.defaultMarker(getHueForRow(i))));
           mMarkerIds.put(marker, i);
           if (mCurrentIndex == i) {
             WebLogger.getLogger(activity.getAppName())
-                .d(TAG, "[setMarkers] selecting marker: " + i);
+                    .d(TAG, "[setMarkers] selecting marker: " + i);
             selectMarker(marker);
           }
         }
       }
 
-      if (firstLocation != null && map != null) {
-        // TODO why 12f exactly?
-        //noinspection MagicNumber
-        map.moveCamera(CameraUpdateFactory.newLatLngZoom(firstLocation, 12f));
-        map.setOnMarkerClickListener(getOnMarkerClickListener());
+      if (markers > 1) {
+        map.moveCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), PADDING));
+      } else if (markers == 1) {
+        map.moveCamera(CameraUpdateFactory.newLatLngZoom(onlyLocation, 12f));
       }
+      map.setOnMarkerClickListener(getOnMarkerClickListener());
     }
   }
 
@@ -487,7 +538,7 @@ public class TableMapInnerFragment extends MapFragment implements OnMapReadyCall
         b.putString(LocationDialogFragment.LOCATION_KEY, location.toString());
         LocationDialogFragment dialog = new LocationDialogFragment();
         dialog.setArguments(b);
-        dialog.show(getFragmentManager(), "LocationDialogFragment");
+        dialog.show(getParentFragmentManager(), "LocationDialogFragment");
       }
     };
   }

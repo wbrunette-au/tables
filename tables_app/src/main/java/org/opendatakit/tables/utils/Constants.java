@@ -93,30 +93,10 @@ public final class Constants {
      */
     public static final String TABLE_DISPLAY_VIEW_TYPE = "tableDisplayViewType";
     /**
-     * Intent key to store filenames
-     */
-    public static final String FILE_NAME = "filename";
-    // should be instanceID?    public static final String ROW_ID = "rowId";
-    /**
-     * The name of the graph view that should be displayed.
-     */
-    public static final String ELEMENT_KEY = "elementKey";
-    /**
-     * Intent key for storing a color rule type (column, table, status column) in a bundle
-     * Only used in IntentUtil
-     */
-    public static final String COLOR_RULE_TYPE = "colorRuleType";
-    /**
      * The TableLevelPreferencesActivity.FragmentType that should be
      * displayed when launching a TableLevelPreferencesActivity.
      */
     public static final String TABLE_PREFERENCE_FRAGMENT_TYPE = "tablePreferenceFragmentType";
-    /**
-     * Key to the where clause if this list view is to be opened with a more
-     * complex query than permissible by the simple query object. Must conform
-     * to the expectations of simpleQuery() AIDL.
-     */
-    public static final String SQL_WHERE = "sqlWhereClause";
 
     /**
      * Used when launching a TableDisplayActivity to a SpreadsheetView when you want to pass
@@ -124,30 +104,6 @@ public final class Constants {
      * via the intent or activity result.
      */
     public static final String CONTAINS_PROPS = "containsProps";
-
-    /**
-     * A JSON serialization of an array of bind parameters.
-     * This allows for integer, numeric, boolean and string values to be
-     * passed through to the SQLite layer.
-     */
-    public static final String SQL_SELECTION_ARGS = "sqlSelectionArgs";
-    /**
-     * An array of strings giving the group by columns. What was formerly
-     * 'overview' mode is a non-null groupBy list.
-     */
-    public static final String SQL_GROUP_BY_ARGS = "sqlGroupByArgs";
-    /**
-     * The having clause, if present
-     */
-    public static final String SQL_HAVING = "sqlHavingClause";
-    /**
-     * The order by column. NOTE: restricted to a single column
-     */
-    public static final String SQL_ORDER_BY_ELEMENT_KEY = "sqlOrderByElementKey";
-    /**
-     * The order by direction (ASC or DESC)
-     */
-    public static final String SQL_ORDER_BY_DIRECTION = "sqlOrderByDirection";
 
     private IntentKeys() {
     }
@@ -179,6 +135,13 @@ public final class Constants {
      * Tag for the detail with list list webview fragment in the fragment manager
      */
     public static final String DETAIL_WITH_LIST_LIST = "tagDetailWithListListFragment";
+
+    /**
+     * ViewFragmentType.NAVIGATE has two inner fragments.
+     * The inner fragments are controlled with these fragment tags.
+     * Tag for the detail with navigate fragment in the fragment manager
+     */
+    public static final String NAVIGATE = "tagNavigateFragment";
 
     /**
      * Preference screens have their own tags...
@@ -374,4 +337,10 @@ public final class Constants {
     }
   }
 
+  /**
+   * Enum for storing SORT ORDER for Table's table list.
+   */
+  public enum TABLE_SORT_ORDER {
+      SORT_ASC, SORT_DESC
+  }
 }

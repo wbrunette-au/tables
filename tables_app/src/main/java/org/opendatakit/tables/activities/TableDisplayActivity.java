@@ -15,15 +15,19 @@
  */
 package org.opendatakit.tables.activities;
 
-import android.app.Fragment;
-import android.app.FragmentManager;
-import android.app.FragmentTransaction;
+import android.Manifest;
+import androidx.fragment.app.Fragment;
+import androidx.fragment.app.FragmentManager;
+import androidx.fragment.app.FragmentTransaction;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
+import androidx.annotation.NonNull;
+import androidx.core.app.ActivityCompat;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
@@ -33,23 +37,37 @@ import org.opendatakit.consts.IntentConsts;
 import org.opendatakit.consts.RequestCodeConsts;
 import org.opendatakit.data.utilities.TableUtil;
 import org.opendatakit.database.data.UserTable;
+import org.opendatakit.database.queries.ArbitraryQuery;
+import org.opendatakit.database.queries.BindArgs;
+import org.opendatakit.database.queries.ResumableQuery;
+import org.opendatakit.database.queries.SingleRowQuery;
 import org.opendatakit.database.service.DbHandle;
 import org.opendatakit.database.service.UserDbInterface;
+import org.opendatakit.database.utilities.QueryUtil;
 import org.opendatakit.exception.ServicesAvailabilityException;
 import org.opendatakit.listener.DatabaseConnectionListener;
 import org.opendatakit.logging.WebLogger;
 import org.opendatakit.tables.R;
 import org.opendatakit.tables.data.PossibleTableViewTypes;
 import org.opendatakit.tables.data.ViewFragmentType;
-import org.opendatakit.tables.fragments.*;
+import org.opendatakit.tables.fragments.DetailViewFragment;
+import org.opendatakit.tables.fragments.DetailWithListDetailViewFragment;
+import org.opendatakit.tables.fragments.DetailWithListListViewFragment;
+import org.opendatakit.tables.fragments.IWebFragment;
+import org.opendatakit.tables.fragments.ListViewFragment;
+import org.opendatakit.tables.fragments.MapListViewFragment;
+import org.opendatakit.tables.fragments.NavigateFragment;
+import org.opendatakit.tables.fragments.SpreadsheetFragment;
+import org.opendatakit.tables.fragments.TableMapInnerFragment;
 import org.opendatakit.tables.fragments.TableMapInnerFragment.TableMapInnerFragmentListener;
 import org.opendatakit.tables.utils.ActivityUtil;
 import org.opendatakit.tables.utils.Constants;
 import org.opendatakit.tables.utils.IntentUtil;
 import org.opendatakit.tables.utils.SQLQueryStruct;
 import org.opendatakit.tables.views.SpreadsheetProps;
+import org.opendatakit.utilities.RuntimePermissionUtils;
 import org.opendatakit.views.ODKWebView;
-import org.opendatakit.views.ViewDataQueryParams;
+import org.opendatakit.views.OdkData;
 import org.opendatakit.webkitserver.utilities.UrlUtils;
 
 import java.lang.reflect.Array;
@@ -80,7 +98,7 @@ import java.util.List;
  */
 public class TableDisplayActivity extends AbsBaseWebActivity
     implements TableMapInnerFragmentListener, IOdkTablesActivity, DatabaseConnectionListener,
-    ISpreadsheetFragmentContainer {
+    ISpreadsheetFragmentContainer, ActivityCompat.OnRequestPermissionsResultCallback {
 
   /**
    * Key for saving current view type to the saved instance state
@@ -103,10 +121,14 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    */
   private static final String TAG = TableDisplayActivity.class.getSimpleName();
   /**
+   * Request code for requesting location permission
+   */
+  private static final int LOCATION_PERM_REQ_CODE = 0;
+  /**
    * Keep references to all queries used to populate all fragments. Use the array index as the
    * viewID.
    */
-  ViewDataQueryParams[] mQueries;
+  ResumableQuery[] mQueries;
   /**
    * The activity destroys and creates a new SpreadsheetFragment every time it gets created, an
    * activity returns or the database becomes available, so we can't store props in the
@@ -133,6 +155,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    */
   private UserTable mUserTable = null;
   private boolean pullFromDatabase;
+  private String mDefaultRowId;
 
   /**
    * Casts an array of objects from Parcelable to a given class that extends Parcelable..
@@ -225,14 +248,15 @@ public class TableDisplayActivity extends AbsBaseWebActivity
           ViewFragmentType
               .valueOf(savedInstanceState.getString(Constants.IntentKeys.TABLE_DISPLAY_VIEW_TYPE)) :
           null;
-      mOriginalFileName = savedInstanceState.containsKey(Constants.IntentKeys.FILE_NAME) ?
-          savedInstanceState.getString(Constants.IntentKeys.FILE_NAME) :
+      mOriginalFileName = savedInstanceState.containsKey(OdkData.IntentKeys.FILE_NAME) ?
+          savedInstanceState.getString(OdkData.IntentKeys.FILE_NAME) :
           null;
+
 
       Parcelable[] parcArr = savedInstanceState.containsKey(INTENT_KEY_QUERIES) ?
           savedInstanceState.getParcelableArray(INTENT_KEY_QUERIES) :
           null;
-      mQueries = castParcelableArray(ViewDataQueryParams.class, parcArr);
+      mQueries = castParcelableArray(ResumableQuery.class, parcArr);
     }
 
     if (mOriginalFragmentType == null) {
@@ -247,14 +271,16 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     }
     if (mOriginalFileName == null) {
       // get the information from the Intent
-      mOriginalFileName = getIntent().hasExtra(Constants.IntentKeys.FILE_NAME) ?
-          getIntent().getStringExtra(Constants.IntentKeys.FILE_NAME) :
+      mOriginalFileName = getIntent().hasExtra(OdkData.IntentKeys.FILE_NAME) ?
+          getIntent().getStringExtra(OdkData.IntentKeys.FILE_NAME) :
           null;
     }
 
     readQueryFromIntent(getIntent());
 
     this.setContentView(R.layout.activity_table_display_activity);
+
+    requestLocationPermission();
   }
 
   /**
@@ -267,6 +293,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
   @Override
   protected void onRestoreInstanceState(Bundle savedInstanceState) {
     super.onRestoreInstanceState(savedInstanceState);
+
+    WebLogger.getLogger(getAppName()).e(TAG, "onRestore " + savedInstanceState.containsKey(INTENT_KEY_CURRENT_VIEW_TYPE));
 
     if (savedInstanceState != null) {
       mCurrentFragmentType = savedInstanceState.containsKey(INTENT_KEY_CURRENT_VIEW_TYPE) ?
@@ -284,14 +312,14 @@ public class TableDisplayActivity extends AbsBaseWebActivity
           ViewFragmentType
               .valueOf(savedInstanceState.getString(Constants.IntentKeys.TABLE_DISPLAY_VIEW_TYPE)) :
           null;
-      mOriginalFileName = savedInstanceState.containsKey(Constants.IntentKeys.FILE_NAME) ?
-          savedInstanceState.getString(Constants.IntentKeys.FILE_NAME) :
+      mOriginalFileName = savedInstanceState.containsKey(OdkData.IntentKeys.FILE_NAME) ?
+          savedInstanceState.getString(OdkData.IntentKeys.FILE_NAME) :
           null;
 
       Parcelable[] parcArr = savedInstanceState.containsKey(INTENT_KEY_QUERIES) ?
           savedInstanceState.getParcelableArray(INTENT_KEY_QUERIES) :
           null;
-      mQueries = castParcelableArray(ViewDataQueryParams.class, parcArr);
+      mQueries = castParcelableArray(ResumableQuery.class, parcArr);
     }
   }
 
@@ -302,16 +330,50 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    */
   private void readQueryFromIntent(Intent in) {
     if (mQueries == null) {
-      mQueries = new ViewDataQueryParams[2]; // We currently can have a maximum of two fragments
+      mQueries = new ResumableQuery[2]; // We currently can have a maximum of two fragments
     }
-    String tableId = IntentUtil.retrieveTableIdFromBundle(in.getExtras());
-    String rowId = IntentUtil.retrieveRowIdFromBundle(in.getExtras());
-    SQLQueryStruct sqlQueryStruct = IntentUtil.getSQLQueryStructFromBundle(in.getExtras());
 
-    ViewDataQueryParams queryParams = new ViewDataQueryParams(tableId, rowId,
-        sqlQueryStruct.whereClause, sqlQueryStruct.selectionArgs, sqlQueryStruct.groupBy,
-        sqlQueryStruct.having, sqlQueryStruct.orderByElementKey, sqlQueryStruct.orderByDirection);
-    mQueries[0] = queryParams;
+    Bundle args = in.getExtras();
+    String queryType = IntentUtil.retrieveQueryTypeFromBundle(args);
+    ResumableQuery viewDataQuery;
+
+    mDefaultRowId = IntentUtil.retrieveDefaultRowIdFromBundle(args);
+
+    if (queryType == null) {
+      // We are assuming this is a Simple Query if query type is unspecified. Here we are just
+      // confirming that the user hasn't provided arguments not present in a Simple Query before we
+      // "cast" it.
+
+      // This checks for sqlCommand, a required argument for Arbitrary Query, but not present in
+      // Simple Query.
+      if(IntentUtil.retrieveSqlCommandFromBundle(args) != null) {
+        throw new IllegalArgumentException("Must specify query type for non-Simple Queries");
+      }
+
+      queryType = OdkData.QueryTypes.SIMPLE_QUERY;
+    }
+
+    if (queryType.equals(OdkData.QueryTypes.SIMPLE_QUERY)) {
+      String tableId = IntentUtil.retrieveTableIdFromBundle(args);
+      String rowId = IntentUtil.retrieveRowIdFromBundle(args);
+      mCurrentSubFileName = IntentUtil.retrieveFileNameFromBundle(args);
+      SQLQueryStruct query = IntentUtil.getSQLQueryStructFromBundle(args);
+      viewDataQuery = new SingleRowQuery(tableId, rowId, query.selectionArgs, query.whereClause,
+          query.groupBy, query.having,
+          QueryUtil.convertStringToArray(query.orderByElementKey),
+          QueryUtil.convertStringToArray(query.orderByDirection),
+          null, null);
+    } else if (queryType.equals(OdkData.QueryTypes.ARBITRARY_QUERY)) {
+
+      String tableId = IntentUtil.retrieveTableIdFromBundle(args);
+      String sqlCommand = IntentUtil.retrieveSqlCommandFromBundle(args);
+      BindArgs selectionArgs = IntentUtil.retrieveSelectionArgsFromBundle(args);
+      viewDataQuery = new ArbitraryQuery(tableId, selectionArgs, sqlCommand, null, null);
+    } else {
+      throw new IllegalArgumentException("Unknown Query Type");
+    }
+
+    mQueries[0] = viewDataQuery;
   }
 
   /**
@@ -337,7 +399,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
           .putString(Constants.IntentKeys.TABLE_DISPLAY_VIEW_TYPE, mOriginalFragmentType.name());
     }
     if (mOriginalFileName != null) {
-      outState.putString(Constants.IntentKeys.FILE_NAME, mOriginalFileName);
+      outState.putString(OdkData.IntentKeys.FILE_NAME, mOriginalFileName);
     }
 
     if (mQueries != null) {
@@ -397,7 +459,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     case SPREADSHEET:
     case DETAIL_WITH_LIST:
     case SUB_LIST:
-      return null; // TODO: For now there is no default detail with list. Do we need one?
+    case NAVIGATE:
+      return null;
     }
     return null;
   }
@@ -412,6 +475,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    * @return the UserTable pulled from tables
    */
   public UserTable getUserTable() {
+    String[] emptyArray = {};
     if (mUserTable == null) {
       DbHandle db = null;
       try {
@@ -424,20 +488,18 @@ public class TableDisplayActivity extends AbsBaseWebActivity
         } else {
           sqlQueryStruct.groupBy = props.getGroupBy();
         }
+
         sqlQueryStruct.orderByElementKey = props.getSort();
         sqlQueryStruct.orderByDirection = props.getSortOrder();
 
-        String[] emptyArray = {};
         mUserTable = getDatabase()
             .simpleQuery(this.getAppName(), db, this.getTableId(), getColumnDefinitions(),
                 sqlQueryStruct.whereClause, sqlQueryStruct.selectionArgs,
                 sqlQueryStruct.groupBy == null ? emptyArray : sqlQueryStruct.groupBy,
-                sqlQueryStruct.having, sqlQueryStruct.orderByElementKey == null ?
-                    emptyArray :
-                    new String[] { sqlQueryStruct.orderByElementKey },
-                sqlQueryStruct.orderByDirection == null ?
-                    emptyArray :
-                    new String[] { sqlQueryStruct.orderByDirection }, null, null);
+                sqlQueryStruct.having,
+                QueryUtil.convertStringToArray(sqlQueryStruct.orderByElementKey),
+                QueryUtil.convertStringToArray(sqlQueryStruct.orderByDirection),
+                null, null);
       } catch (ServicesAvailabilityException e) {
         WebLogger.getLogger(getAppName()).printStackTrace(e);
       } finally {
@@ -464,33 +526,44 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    */
   @Override
   public String getUrlBaseLocation(boolean ifChanged, String fragmentID) {
-    // TODO: do we need to track the ifChanged status?
-
     String filename;
-    if (Constants.FragmentTags.DETAIL_WITH_LIST_LIST.equals(fragmentID)) {
+    if (fragmentID != null && Constants.FragmentTags.DETAIL_WITH_LIST_LIST.equals(fragmentID)) {
       filename = mCurrentSubFileName;
     } else {
       filename = mCurrentFileName;
     }
     if (filename != null) {
-      return UrlUtils.getAsWebViewUri(this, getAppName(), filename);
+      return UrlUtils.getAsWebViewUri(getAppName(), filename);
     }
     return null;
   }
 
   /**
-   * Forwards the request to the map list found via the fragment manager
+   * Forwards the request to the appropriate map listener found via the fragment manager
    *
    * @return the index of the currently selected item in the map list, or null if no item was
    * selected
    */
   @Override
   public Integer getIndexOfSelectedItem() {
-    MapListViewFragment mlvFragment = (MapListViewFragment) this.getFragmentManager()
-        .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
-    if (mlvFragment != null && mlvFragment.isVisible()) {
-      return mlvFragment.getIndexOfSelectedItem();
+
+    switch (mCurrentFragmentType) {
+    case MAP:
+      MapListViewFragment mlvFragment = (MapListViewFragment) this.getSupportFragmentManager()
+          .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
+      if (mlvFragment != null && mlvFragment.isVisible()) {
+        return mlvFragment.getIndexOfSelectedItem();
+      }
+      break;
+    case NAVIGATE:
+      NavigateFragment navFragment = (NavigateFragment) this.getSupportFragmentManager()
+          .findFragmentByTag(Constants.FragmentTags.NAVIGATE);
+      if (navFragment != null && navFragment.isVisible()) {
+        return navFragment.getIndexOfSelectedItem();
+      }
+      break;
     }
+
     // no item selected
     return null;
   }
@@ -507,7 +580,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
         || mCurrentFragmentType == ViewFragmentType.DETAIL_WITH_LIST) {
       return IntentUtil.retrieveRowIdFromBundle(getIntentExtras());
     }
-    // map views are not considered to have a specific instanceId.
+    // map views (including navigate) are not considered to have a specific instanceId.
     // While one of the items happens to be distinguished, the view
     // is still a list of items.
     return null;
@@ -526,7 +599,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
 
   /**
    * Gets the webkit object out of the fragment if we're in a list, map, detail or detail with
-   * list/sublist fragment, but not if we're in a spreadsheet fragment
+   * list/sublist fragment, but not if we're in a spreadsheet or navigate fragment
    *
    * @param viewID used to determine which webkit object to get if we're in a list with
    *               detail/sublist view
@@ -536,9 +609,10 @@ public class TableDisplayActivity extends AbsBaseWebActivity
   @Override
   public ODKWebView getWebKitView(String viewID) {
 
-    FragmentManager fragmentManager = this.getFragmentManager();
+    FragmentManager fragmentManager = this.getSupportFragmentManager();
     switch (mCurrentFragmentType) {
     case SPREADSHEET:
+    case NAVIGATE:
       // this isn't a webkit
       return null;
     case LIST:
@@ -600,6 +674,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     switch (mCurrentFragmentType) {
     case SPREADSHEET:
     case LIST:
+    case NAVIGATE:
     case MAP:
       /*
        * Disable or enable those menu items corresponding to view types that are
@@ -609,11 +684,14 @@ public class TableDisplayActivity extends AbsBaseWebActivity
       MenuItem spreadsheetItem = menu.findItem(R.id.top_level_table_menu_view_spreadsheet_view);
       MenuItem listItem = menu.findItem(R.id.top_level_table_menu_view_list_view);
       MenuItem mapItem = menu.findItem(R.id.top_level_table_menu_view_map_view);
+      MenuItem navigateItem = menu.findItem(R.id.top_level_table_menu_view_navigate_view);
       spreadsheetItem.setEnabled(true); // always possible
       listItem.setEnabled(
           mPossibleTableViewTypes != null && mPossibleTableViewTypes.listViewIsPossible());
       mapItem.setEnabled(
           mPossibleTableViewTypes != null && mPossibleTableViewTypes.mapViewIsPossible());
+      navigateItem.setEnabled(
+          mPossibleTableViewTypes != null && mPossibleTableViewTypes.navigateViewIsPossible());
       // Set the checkbox highlight to the view type being displayed.
       switch (mCurrentFragmentType) {
       case SPREADSHEET:
@@ -625,6 +703,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
       case MAP:
         mapItem.setChecked(true);
         break;
+      case NAVIGATE:
+        navigateItem.setChecked(true);
       default:
         break;
       }
@@ -670,6 +750,9 @@ public class TableDisplayActivity extends AbsBaseWebActivity
             null;
       }
       setCurrentFragmentType(ViewFragmentType.MAP, filename, null);
+      return true;
+    case R.id.top_level_table_menu_view_navigate_view:
+      setCurrentFragmentType(ViewFragmentType.NAVIGATE, filename, null);
       return true;
     case R.id.top_level_table_menu_add:
       WebLogger.getLogger(getAppName()).d(TAG, "[onOptionsItemSelected] add selected");
@@ -871,7 +954,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
   private void showCurrentDisplayFragment(boolean createNew) {
     possiblySupplyDefaults();
     updateChildViewVisibility(mCurrentFragmentType);
-    FragmentManager fragmentManager = this.getFragmentManager();
+    FragmentManager fragmentManager = this.getSupportFragmentManager();
     FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
     // First acquire all the possible fragments.
     Fragment spreadsheetFragment = fragmentManager
@@ -886,6 +969,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
         .findFragmentByTag(Constants.FragmentTags.DETAIL_WITH_LIST_DETAIL);
     Fragment detailWithListViewListFragment = fragmentManager
         .findFragmentByTag(Constants.FragmentTags.DETAIL_WITH_LIST_LIST);
+    Fragment navigateFragment = fragmentManager
+        .findFragmentByTag(Constants.FragmentTags.NAVIGATE);
 
     // Hide all fragments other than the current fragment type...
     if (mCurrentFragmentType != ViewFragmentType.SPREADSHEET && spreadsheetFragment != null) {
@@ -909,6 +994,15 @@ public class TableDisplayActivity extends AbsBaseWebActivity
       if (mapListViewFragment != null) {
         fragmentTransaction.hide(mapListViewFragment);
       }
+
+    }
+    if (mCurrentFragmentType != ViewFragmentType.NAVIGATE) {
+      if (navigateFragment != null) {
+        fragmentTransaction.hide(navigateFragment);
+      }
+    }
+    if (mCurrentFragmentType != ViewFragmentType.NAVIGATE &&
+        mCurrentFragmentType != ViewFragmentType.MAP) {
       if (innerMapFragment != null) {
         fragmentTransaction.hide(innerMapFragment);
       }
@@ -1006,21 +1100,45 @@ public class TableDisplayActivity extends AbsBaseWebActivity
       } else {
         fragmentTransaction.show(mapListViewFragment);
       }
-      if (innerMapFragment == null || createNew) {
-        if (innerMapFragment != null) {
+      // Always destroy and recreate inner map fragment
+      if (innerMapFragment != null) {
+        // remove the old fragment
+        WebLogger.getLogger(getAppName())
+            .d(TAG, "[showMapFragment] removing old inner map fragment");
+        fragmentTransaction.remove(innerMapFragment);
+      }
+      innerMapFragment = new TableMapInnerFragment();
+      fragmentTransaction
+          .add(R.id.map_view_inner_map, innerMapFragment, Constants.FragmentTags.MAP_INNER_MAP);
+      ((TableMapInnerFragment) innerMapFragment).listener = this;
+      break;
+    case NAVIGATE:
+      if (navigateFragment == null || createNew) {
+        if (navigateFragment != null) {
           // remove the old fragment
           WebLogger.getLogger(getAppName())
-              .d(TAG, "[showMapFragment] removing old inner map fragment");
-          fragmentTransaction.remove(innerMapFragment);
+              .d(TAG, "[showNavigateFragment] removing old navigate fragment");
+          fragmentTransaction.remove(navigateFragment);
         }
-        innerMapFragment = new TableMapInnerFragment();
+        navigateFragment = NavigateFragment.newInstance(mDefaultRowId);
         fragmentTransaction
-            .add(R.id.map_view_inner_map, innerMapFragment, Constants.FragmentTags.MAP_INNER_MAP);
-        ((TableMapInnerFragment) innerMapFragment).listener = this;
+            .add(R.id.navigate, navigateFragment, Constants.FragmentTags.NAVIGATE);
       } else {
-        ((TableMapInnerFragment) innerMapFragment).listener = this;
-        fragmentTransaction.show(innerMapFragment);
+        fragmentTransaction.show(navigateFragment);
       }
+      // Always destroy and recreate inner map fragment
+      if (innerMapFragment != null) {
+        // remove the old fragment
+        WebLogger.getLogger(getAppName())
+            .d(TAG, "[showNavigateFragment] removing old inner map fragment");
+        fragmentTransaction.remove(innerMapFragment);
+      }
+      innerMapFragment = new TableMapInnerFragment();
+      fragmentTransaction
+          .add(R.id.navigate_view_inner_map, innerMapFragment, Constants.FragmentTags
+              .MAP_INNER_MAP);
+      ((TableMapInnerFragment) innerMapFragment).listener = this;
+
       break;
     }
     fragmentTransaction.commit();
@@ -1034,8 +1152,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    * @param fragmentID The id of the fragment to search the fragment manager for
    * @param args       the arguments to give to the fragment
    */
-  public void updateFragment(String fragmentID, Bundle args) {
-    if (!fragmentID.equals(Constants.FragmentTags.DETAIL_WITH_LIST_LIST)) {
+  public void updateFragment(String fragmentID, Bundle args) throws IllegalArgumentException {
+    if (fragmentID == null || !fragmentID.equals(Constants.FragmentTags.DETAIL_WITH_LIST_LIST)) {
       WebLogger.getLogger(getAppName())
           .e(TAG, "[updateFragment] Attempted to update an unsupported fragment id: " + fragmentID);
       return;
@@ -1048,17 +1166,31 @@ public class TableDisplayActivity extends AbsBaseWebActivity
       return;
     }
 
-    String tableId = IntentUtil.retrieveTableIdFromBundle(args);
-    String rowId = IntentUtil.retrieveRowIdFromBundle(args);
-    mCurrentSubFileName = IntentUtil.retrieveFileNameFromBundle(args);
-    SQLQueryStruct query = IntentUtil.getSQLQueryStructFromBundle(args);
+    String queryType = IntentUtil.retrieveQueryTypeFromBundle(args);
+    ResumableQuery viewDataQuery;
+    if (queryType.equals(OdkData.QueryTypes.SIMPLE_QUERY)) {
+      String tableId = IntentUtil.retrieveTableIdFromBundle(args);
+      String rowId = IntentUtil.retrieveRowIdFromBundle(args);
+      mCurrentSubFileName = IntentUtil.retrieveFileNameFromBundle(args);
+      SQLQueryStruct query = IntentUtil.getSQLQueryStructFromBundle(args);
+      viewDataQuery = new SingleRowQuery(tableId, rowId, query.selectionArgs, query.whereClause,
+          query.groupBy, query.having,
+          QueryUtil.convertStringToArray(query.orderByElementKey),
+          QueryUtil.convertStringToArray(query.orderByDirection),
+          null, null);
+    } else if (queryType.equals(OdkData.QueryTypes.ARBITRARY_QUERY)) {
+      String tableId = IntentUtil.retrieveTableIdFromBundle(args);
+      String sqlCommand = IntentUtil.retrieveSqlCommandFromBundle(args);
+      mCurrentSubFileName = IntentUtil.retrieveFileNameFromBundle(args);
+      BindArgs selectionArgs = IntentUtil.retrieveSelectionArgsFromBundle(args);
+      viewDataQuery = new ArbitraryQuery(tableId, selectionArgs, sqlCommand, null, null);
+    } else {
+      throw new IllegalArgumentException("Unrecognized query type");
+    }
 
-    ViewDataQueryParams queryParams = new ViewDataQueryParams(tableId, rowId, query.whereClause,
-        query.selectionArgs, query.groupBy, query.having, query.orderByElementKey,
-        query.orderByElementKey);
-    mQueries[1] = queryParams;
+    mQueries[1] = viewDataQuery;
 
-    FragmentManager fragmentManager = this.getFragmentManager();
+    FragmentManager fragmentManager = this.getSupportFragmentManager();
     FragmentTransaction fragmentTransaction = fragmentManager.beginTransaction();
 
     Fragment detailWithListViewListFragment = fragmentManager
@@ -1091,11 +1223,11 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    * @throws IllegalArgumentException if the database is down
    */
   @Override
-  public ViewDataQueryParams getViewQueryParams(String fragmentID) throws IllegalArgumentException {
+  public ResumableQuery getViewQuery(String fragmentID) throws IllegalArgumentException {
 
     int queryIndex = 0;
 
-    if (Constants.FragmentTags.DETAIL_WITH_LIST_LIST.equals(fragmentID)) {
+    if (fragmentID != null && Constants.FragmentTags.DETAIL_WITH_LIST_LIST.equals(fragmentID)) {
       queryIndex = 1;
     }
 
@@ -1120,7 +1252,8 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     View onePaneContent = findViewById(R.id.activity_table_display_activity_one_pane_content);
     View splitContent = findViewById(R.id.activity_table_display_activity_split_content);
     View mapContent = findViewById(R.id.activity_table_display_activity_map_content);
-    for (View v : new View[] { onePaneContent, splitContent, mapContent }) {
+    View navigateContent = findViewById(R.id.activity_table_display_activity_navigate_content);
+    for (View v : new View[] { onePaneContent, splitContent, mapContent, navigateContent }) {
       v.setVisibility(View.GONE);
     }
     switch (viewFragmentType) {
@@ -1136,6 +1269,9 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     case MAP:
       mapContent.setVisibility(View.VISIBLE);
       break;
+    case NAVIGATE:
+      navigateContent.setVisibility(View.VISIBLE);
+      break;
     }
   }
 
@@ -1144,15 +1280,32 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    */
   @Override
   public void onSetSelectedItemIndex(int i) {
-    FragmentManager fragmentManager = getFragmentManager();
-    MapListViewFragment mapListViewFragment = (MapListViewFragment) fragmentManager
-        .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
+    FragmentManager fragmentManager = getSupportFragmentManager();
 
-    if (mapListViewFragment == null) {
-      WebLogger.getLogger(getAppName())
-          .e(TAG, "[onSetIndex] mapListViewFragment is null! Returning");
-    } else {
-      mapListViewFragment.setIndexOfSelectedItem(i);
+    switch (mCurrentFragmentType) {
+    case MAP:
+      MapListViewFragment mapListViewFragment = (MapListViewFragment) fragmentManager
+          .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
+      if (mapListViewFragment == null) {
+        WebLogger.getLogger(getAppName())
+            .e(TAG, "[onSetIndex] mapListViewFragment is null! Returning");
+      } else {
+        mapListViewFragment.setIndexOfSelectedItem(i);
+      }
+      break;
+    case NAVIGATE:
+      NavigateFragment navigateFragment = (NavigateFragment) fragmentManager
+          .findFragmentByTag(Constants.FragmentTags.NAVIGATE);
+      if (navigateFragment == null) {
+        WebLogger.getLogger(getAppName())
+            .e(TAG, "[onSetIndex] navigateFragment is null! Returning");
+      } else {
+        navigateFragment.setIndexOfSelectedItem(i);
+      }
+      break;
+    default:
+      throw new IllegalStateException(TAG + ": Attempted to onSetSelectedItemIndex from unsupported"
+          + " fragment type: " + mCurrentFragmentType);
     }
   }
 
@@ -1160,15 +1313,34 @@ public class TableDisplayActivity extends AbsBaseWebActivity
    * Invoked by TableMapInnerFragment when an item has stopped being selected
    */
   public void setNoItemSelected() {
-    FragmentManager fragmentManager = getFragmentManager();
-    MapListViewFragment mapListViewFragment = (MapListViewFragment) fragmentManager
-        .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
+    FragmentManager fragmentManager = getSupportFragmentManager();
 
-    if (mapListViewFragment == null) {
-      WebLogger.getLogger(getAppName())
-          .e(TAG, "[setNoItemSelected] mapListViewFragment is null! Returning");
-    } else {
-      mapListViewFragment.setNoItemSelected();
+    switch (mCurrentFragmentType) {
+    case MAP:
+      MapListViewFragment mapListViewFragment = (MapListViewFragment) fragmentManager
+          .findFragmentByTag(Constants.FragmentTags.MAP_LIST);
+
+      if (mapListViewFragment == null) {
+        WebLogger.getLogger(getAppName())
+            .e(TAG, "[setNoItemSelected] mapListViewFragment is null! Returning");
+      } else {
+        mapListViewFragment.setNoItemSelected();
+      }
+      break;
+    case NAVIGATE:
+      NavigateFragment navigateFragment = (NavigateFragment) fragmentManager
+          .findFragmentByTag(Constants.FragmentTags.NAVIGATE);
+
+      if (navigateFragment == null) {
+        WebLogger.getLogger(getAppName())
+            .e(TAG, "[setNoItemSelected] navigateFragment is null! Returning");
+      } else {
+        navigateFragment.setNoItemSelected();
+      }
+      break;
+    default:
+      throw new IllegalStateException(TAG + ": Attempted to setNoItemSelected from unsupported"
+          + " fragment type: " + mCurrentFragmentType);
     }
   }
 
@@ -1180,7 +1352,7 @@ public class TableDisplayActivity extends AbsBaseWebActivity
   }
 
   private void removeAllFragments() {
-    FragmentManager fragmentManager = this.getFragmentManager();
+    FragmentManager fragmentManager = this.getSupportFragmentManager();
     FragmentTransaction fragmentTransaction = null;
     // First acquire all the possible fragments.
     Fragment spreadsheetFragment = fragmentManager
@@ -1195,10 +1367,12 @@ public class TableDisplayActivity extends AbsBaseWebActivity
         .findFragmentByTag(Constants.FragmentTags.DETAIL_WITH_LIST_DETAIL);
     Fragment detailWithListViewListFragment = fragmentManager
         .findFragmentByTag(Constants.FragmentTags.DETAIL_WITH_LIST_LIST);
+    Fragment navigateFragment = fragmentManager
+        .findFragmentByTag(Constants.FragmentTags.NAVIGATE);
 
     for (Fragment f : new Fragment[] { spreadsheetFragment, listViewFragment, mapListViewFragment,
         innerMapFragment, detailViewFragment, detailWithListViewDetailFragment,
-        detailWithListViewListFragment }) {
+        detailWithListViewListFragment, navigateFragment }) {
       if (f != null) {
         if (fragmentTransaction == null) {
           fragmentTransaction = fragmentManager.beginTransaction();
@@ -1211,4 +1385,32 @@ public class TableDisplayActivity extends AbsBaseWebActivity
     }
   }
 
+  private void requestLocationPermission() {
+    // only check for fine location
+    // but request coarse and fine in case we can only get coarse
+    if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(
+              this,
+              new String[] {
+                      Manifest.permission.ACCESS_FINE_LOCATION,
+                      Manifest.permission.ACCESS_COARSE_LOCATION
+              },
+              LOCATION_PERM_REQ_CODE
+      );
+    }
+  }
+
+  @Override
+  public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+    super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+    RuntimePermissionUtils.handleRequestPermissionsResult(
+        requestCode,
+        permissions,
+        grantResults,
+        this,
+        R.string.location_permission_rationale
+    );
+  }
 }

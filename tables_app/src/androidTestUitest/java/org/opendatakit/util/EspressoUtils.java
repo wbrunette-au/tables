@@ -2,32 +2,37 @@ package org.opendatakit.util;
 
 import android.app.Activity;
 import android.app.Instrumentation;
-import android.preference.Preference;
-import android.support.test.espresso.DataInteraction;
-import android.support.test.espresso.NoMatchingViewException;
-import android.support.test.espresso.ViewAssertion;
-import android.support.test.espresso.ViewInteraction;
-import android.support.test.espresso.intent.rule.IntentsTestRule;
-import android.support.test.espresso.web.sugar.Web;
-import android.support.test.espresso.web.webdriver.Locator;
-import android.support.test.rule.ActivityTestRule;
 import android.view.View;
-import org.hamcrest.Description;
+
+import androidx.annotation.StringRes;
+import androidx.recyclerview.widget.RecyclerView;
+import androidx.test.espresso.NoMatchingViewException;
+import androidx.test.espresso.ViewAssertion;
+import androidx.test.espresso.ViewInteraction;
+import androidx.test.espresso.contrib.RecyclerViewActions;
+import androidx.test.espresso.intent.rule.IntentsTestRule;
+import androidx.test.espresso.web.sugar.Web;
+import androidx.test.espresso.web.webdriver.Locator;
+import androidx.test.rule.ActivityTestRule;
+
 import org.hamcrest.Matcher;
-import org.hamcrest.TypeSafeMatcher;
 import org.opendatakit.tables.R;
 
-import static android.support.test.espresso.Espresso.onData;
-import static android.support.test.espresso.Espresso.onView;
-import static android.support.test.espresso.action.ViewActions.click;
-import static android.support.test.espresso.assertion.ViewAssertions.matches;
-import static android.support.test.espresso.intent.Intents.intending;
-import static android.support.test.espresso.intent.matcher.IntentMatchers.isInternal;
-import static android.support.test.espresso.matcher.RootMatchers.withDecorView;
-import static android.support.test.espresso.matcher.ViewMatchers.*;
-import static android.support.test.espresso.web.sugar.Web.onWebView;
-import static android.support.test.espresso.web.webdriver.DriverAtoms.findElement;
-import static org.hamcrest.Matchers.*;
+import static androidx.test.espresso.Espresso.onView;
+import static androidx.test.espresso.action.ViewActions.click;
+import static androidx.test.espresso.assertion.ViewAssertions.matches;
+import static androidx.test.espresso.intent.Intents.intending;
+import static androidx.test.espresso.intent.matcher.IntentMatchers.isInternal;
+import static androidx.test.espresso.matcher.RootMatchers.withDecorView;
+import static androidx.test.espresso.matcher.ViewMatchers.hasDescendant;
+import static androidx.test.espresso.matcher.ViewMatchers.isAssignableFrom;
+import static androidx.test.espresso.matcher.ViewMatchers.isDisplayed;
+import static androidx.test.espresso.matcher.ViewMatchers.withId;
+import static androidx.test.espresso.matcher.ViewMatchers.withText;
+import static androidx.test.espresso.web.sugar.Web.onWebView;
+import static androidx.test.espresso.web.webdriver.DriverAtoms.findElement;
+import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.not;
 
 public class EspressoUtils {
   /**
@@ -53,18 +58,27 @@ public class EspressoUtils {
     return rule.getActivity().getResources().getString(id);
   }
 
+  public static Web.WebInteraction<Void> delayedFindElement(Locator locator,
+                                                            String value,
+                                                            int timeout) {
+    return delayedFindElement(null, locator, value, timeout);
+  }
+
   /**
    * THIS IS A TEMPORARY SOLUTION
    * TODO: implement an idling webView
    */
-  public static Web.WebInteraction<Void> delayedFindElement(Locator locator, String value,
-      int timeout) {
+  public static Web.WebInteraction<Void> delayedFindElement(Matcher<View> webViewMatcher,
+                                                            Locator locator,
+                                                            String value,
+                                                            int timeout) {
     final int waitTime = 200;
     Web.WebInteraction<Void> wInteraction = null;
 
     for (int i = 0; i < (timeout / waitTime) + 1; i++) {
       try {
-        wInteraction = onWebView().withElement(findElement(locator, value));
+        wInteraction = (webViewMatcher == null ? onWebView() : onWebView(webViewMatcher))
+                .withElement(findElement(locator, value));
       } catch (Exception e) {
         //Ignored
       }
@@ -94,15 +108,6 @@ public class EspressoUtils {
         .respondWith(new Instrumentation.ActivityResult(Activity.RESULT_CANCELED, null));
   }
 
-  public static ViewAssertion dummyViewAssertion() {
-    return new ViewAssertion() {
-      @Override
-      public void check(View view, NoMatchingViewException noView) {
-        //Do nothing
-      }
-    };
-  }
-
   public static boolean viewExists(Matcher<View> view) {
     final boolean[] exists = new boolean[1];
 
@@ -114,36 +119,6 @@ public class EspressoUtils {
     });
 
     return exists[0];
-  }
-
-  public static DataInteraction getFirstItem() {
-    return onData(anything()).atPosition(0);
-  }
-
-  public static String getPrefSummary(final String key) {
-    final String[] summary = new String[1];
-    final Matcher<String> keyMatcher = is(key);
-
-    onData(new TypeSafeMatcher<Preference>() {
-      @Override
-      protected boolean matchesSafely(Preference item) {
-        boolean match = keyMatcher.matches(item.getKey());
-
-        if (match) {
-          summary[0] = item.getSummary().toString();
-        }
-
-        return match;
-      }
-
-      @Override
-      public void describeTo(Description description) {
-        description.appendText(" preference with key matching: ");
-        keyMatcher.describeTo(description);
-      }
-    }).check(dummyViewAssertion());
-
-    return summary[0];
   }
 
   public static int getColor(Matcher<View> matcher, final int x, final int y) {
@@ -185,5 +160,12 @@ public class EspressoUtils {
         // ignore
       }
     } while (viewExists(withId(R.id.menu_web_view_activity_table_manager)) && (++count < limit));
+  }
+
+  public static ViewInteraction onRecyclerViewText(@StringRes int textId) {
+    onView(isAssignableFrom(RecyclerView.class))
+        .perform(RecyclerViewActions.scrollTo(hasDescendant(withText(textId))));
+
+    return onView(withText(textId));
   }
 }

@@ -23,16 +23,19 @@ import android.graphics.Typeface;
 import android.util.DisplayMetrics;
 import android.view.ContextMenu;
 import android.view.View;
-import org.opendatakit.activities.IAppAwareActivity;
 import org.opendatakit.data.ColorGuide;
 import org.opendatakit.data.ColorGuideGroup;
 import org.opendatakit.data.ColorRuleGroup;
 import org.opendatakit.database.data.ColumnDefinition;
-import org.opendatakit.database.data.Row;
+import org.opendatakit.database.data.TypedRow;
 import org.opendatakit.logging.WebLogger;
 import org.opendatakit.provider.DataTableColumns;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * A view that draws a single table. A single table is essentially a grid of of
@@ -624,7 +627,7 @@ final class TabularView extends View {
     // drawing the cells
     int y = topTopmost;
     for (int theRowIndex = topmost; theRowIndex < bottommost + 1; theRowIndex++) {
-      Row theRow = null;
+      TypedRow theRow = null;
 
       // we only need to fetch this once for a given row...
       ColorGuide rowGuide = null;
@@ -632,23 +635,22 @@ final class TabularView extends View {
           || this.type == TableLayoutType.MAIN_DATA) {
         // these are the only cases (below) where this value is used...
         theRow = mTable.getRowAtIndex(theRowIndex);
-        if (theRow == null) {
-          // TODO don't know what else to do here, this happens with the really odd
-          // IndexOutOfBoundsException
-          String appName = null;
-          if (controller.getContext() instanceof IAppAwareActivity) {
-            appName = ((IAppAwareActivity) controller.getContext()).getAppName();
+
+        // theRow is a wrapper of the row. Therefore, theRow should
+        // be null whenever an index that is out of bounds of the given
+        // table will also return null. If this is the case, this loop
+        // should break to stop drawing.
+        if (theRow != null) {
+          String checkNull = theRow.getStringValueByKey(DataTableColumns.ID);
+          if (checkNull != null) {
+            rowGuide = mRowColorGuideGroup.getColorGuideForRowId(checkNull);
           }
-          WebLogger.getLogger(appName).e(TAG, "Out of bounds exception bug AGAIN");
-          return;
+        } else {
+          break;
         }
-        //rowGuide = mRowColorRuleGroup.getColorGuide(this.mTable.getColumnDefinitions(), theRow);
-        rowGuide = mRowColorGuideGroup
-            .getColorGuideForRowId(theRow.getDataByKey(DataTableColumns.ID));
       }
 
       for (int j = indexOfLeftmostColumn; j < indexOfRightmostColumn + 1; j++) {
-
         String datum;
         String columnKey = null;
         if (this.type == TableLayoutType.STATUS_DATA
@@ -678,8 +680,11 @@ final class TabularView extends View {
             backgroundColor = rowGuide.getBackground();
           }
           //ColorGuide columnGuide = mColumnColorRules.get(this.mElementKeys.get(j)).getColorGuide(this.mTable.getColumnDefinitions(), theRow);
-          ColorGuide columnGuide = mColumnColorGuideGroup.get(this.mElementKeys.get(j))
-              .getColorGuideForRowId(theRow.getDataByKey(DataTableColumns.ID));
+          String checkNull = theRow.getStringValueByKey(DataTableColumns.ID);
+          ColorGuide columnGuide = null;
+          if (checkNull != null) {
+            rowGuide = mRowColorGuideGroup.getColorGuideForRowId(checkNull);
+          }
           // Override the role rule if a column rule matched.
           if (columnGuide != null) {
             foregroundColor = columnGuide.getForeground();
@@ -760,7 +765,7 @@ final class TabularView extends View {
       bgPaint.setColor(this.defaultBackgroundColor);
     }
     canvas.drawRect(x, y, x + columnWidth, y + rowHeight, bgPaint);
-    canvas.save(Canvas.ALL_SAVE_FLAG);
+    canvas.save();
     canvas.clipRect(x + HORIZONTAL_CELL_PADDING, y, x + columnWidth - 2 * HORIZONTAL_CELL_PADDING,
         y + rowHeight);
     textPaint.setColor(foregroundColor);
