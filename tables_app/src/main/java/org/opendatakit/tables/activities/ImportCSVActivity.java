@@ -49,6 +49,7 @@ import org.opendatakit.utilities.ODKFileUtils;
 import org.opendatakit.utilities.ODKXFileUriUtils;
 
 import java.io.File;
+import java.util.Arrays;
 
 /**
  * An activity for importing CSV files to a table.
@@ -160,21 +161,21 @@ public class ImportCSVActivity extends AbsBaseActivity {
       String remainingPath = ODKXFileUriUtils.ODKXRemainingPath(appName, csvUri);
       String[] terms = remainingPath.split("\\.");
       if (terms.length == 2 && terms[1].equals("csv")) {
-        String tableId = terms[0];
+        String tableId = terms[0].substring(terms[0].lastIndexOf('/') + 1);
         String fileQualifier = null;
         request = new ImportRequest(tableId, fileQualifier);
       } else if (terms.length == 3 && (terms[1].equals("properties") || terms[1]
               .equals("definition")) && terms[2].equals("csv")) {
-        String tableId = terms[0];
+        String tableId = terms[0].substring(terms[0].lastIndexOf('/') + 1);
         String fileQualifier = null;
         request = new ImportRequest(tableId, fileQualifier);
       } else if (terms.length == 3 && terms[2].equals("csv")) {
-        String tableId = terms[0];
+        String tableId = terms[0].substring(terms[0].lastIndexOf('/') + 1);
         String fileQualifier = terms[1];
         request = new ImportRequest(tableId, fileQualifier);
       } else if (terms.length == 4 && (terms[2].equals("properties") || terms[2]
               .equals("definition")) && terms[3].equals("csv")) {
-        String tableId = terms[0];
+        String tableId = terms[0].substring(terms[0].lastIndexOf('/') + 1);
         String fileQualifier = terms[1];
         request = new ImportRequest(tableId, fileQualifier);
       }
@@ -306,5 +307,4 @@ public class ImportCSVActivity extends AbsBaseActivity {
       importSubmission();
     }
   }
-
 }

@@ -55,6 +55,8 @@ import org.opendatakit.utilities.ODKFileUtils;
 
 import java.io.File;
 import java.io.FilenameFilter;
+import java.io.IOException;
+import java.nio.file.Files;
 
 
 @LargeTest
@@ -130,6 +132,7 @@ public class CsvTest {
             VALID_QUALIFIER)).delete();
   }
 
+  //todo: figure out why all export tests fail on emulator.  try testing on device instead of emulator; emulator table manager shows no tables, but they show up on real device.
   @Test
   public void exportCsv_tableList() {
     onView(withId(R.id.menu_table_manager_export)).perform(click());
@@ -230,38 +233,35 @@ public class CsvTest {
   }
 
   @Test
-  @Ignore
   public void importCsv_checkOdkxFolder() {
     // Define the source CSV file (a test CSV file to be copied)
-    File sourceCsvFile = new File("/opendatakit/default/config/tables/visit/properties.csv");
+    File sourceCsvFile = new File("/sdcard/opendatakit/default/config/tables/visit/properties.csv");
     // Define the target directory where you want to check for the existence of the CSV file
-    File odkxFolder = new File("/opendatakit/default/config/assets/csv");
-    /**
-     *  comment back in after file fixes
-
+    File odkxFolder = new File("/sdcard/opendatakit/default/config/assets/csv");
     try {
-        // Copy the test CSV file to the target directory
-        Files.copy(sourceCsvFile.toPath(), new File(odkxFolder, "properties.csv").toPath());
+      // Copy the test CSV file to the target directory
+      Files.copy(sourceCsvFile.toPath(), new File(odkxFolder, "properties.csv").toPath());
 
-        // Check if the /opendatakit/default/config/assets/csv directory exists
-        boolean odkxFolderExists = odkxFolder.exists() && odkxFolder.isDirectory();
+      // Check if the /opendatakit/default/config/assets/csv directory exists
+      boolean odkxFolderExists = odkxFolder.exists() && odkxFolder.isDirectory();
 
-        // Check if the properties CSV file exists within the /csv folder
-        boolean csvFileExists = new File(odkxFolder, "properties.csv").exists();
+      // Check if the properties CSV file exists within the /csv folder
+      boolean csvFileExists = new File(odkxFolder, "properties.csv").exists();
 
-        // Assert that the directory exists and contains .csv files
-        assertThat("/opendatakit/default/config/assets/csv directory does not exist or is not a directory", odkxFolderExists, is(true));
-        assertThat("properties.csv file does not exist in the /csv folder", csvFileExists, is(true));
+      // Assert that the directory exists and contains .csv files
+      assertThat("/opendatakit/default/config/assets/csv directory does not exist or is not a directory", odkxFolderExists, is(true));
+      assertThat("properties.csv file does not exist in the /csv folder", csvFileExists, is(true));
     } catch (IOException e) {
-        // Handle the exception that might occur during the file copy operation
-        fail("An exception occurred during the file copy operation: " + e.getMessage());
+      // Handle the exception that might occur during the file copy operation
+      e.printStackTrace();
+      fail("An exception occurred during the file copy operation: " + e.getMessage());
     } finally {
-        // Clean up: Delete the properties CSV file after the test is complete
-        File testCsvFile = new File(odkxFolder, "properties.csv");
-        if (testCsvFile.exists()) {
-            testCsvFile.delete();
-        }
+      // Clean up: Delete the properties CSV file after the test is complete
+      File testCsvFile = new File(odkxFolder, "properties.csv");
+      if (testCsvFile.exists()) {
+        testCsvFile.delete();
+      }
     }
-     */
   }
 }
+
